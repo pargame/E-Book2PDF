@@ -314,10 +314,21 @@ class ScreenshotWorker(threading.Thread):
                     break
 
                 page_num = i + 1
-                self.app.update_status(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중... (중단하려면 아무 키나 누르세요)")
+                self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 시도...")
                 
-                file_name = f"{self.app.IMAGE_FOLDER}/page_{page_num:03d}.png"
-                pyautogui.screenshot(file_name, region=self.settings['region'])
+                file_path = os.path.join(self.app.IMAGE_FOLDER, f"page_{page_num:03d}.png")
+                
+                # 스크린샷 실행
+                pyautogui.screenshot(file_path, region=self.settings['region'])
+                time.sleep(0.1) # 파일 시스템이 처리할 시간 확보
+
+                # 스크린샷 성공 여부 확인
+                if not os.path.exists(file_path):
+                    self.app.update_status(f"오류: {page_num}페이지 캡처 실패! 권한을 확인하세요.")
+                    self.stop_requested = True # 오류 발생 시 작업 중단
+                    continue
+
+                self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 성공. 페이지 넘기는 중...")
 
                 # 페이지 넘김
                 if self.settings['turn_method'] == 'click':
