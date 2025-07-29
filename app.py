@@ -19,7 +19,6 @@ class CoordinateSelector(ctk.CTkToplevel):
         self.deiconify()
         self.lift()
         self.focus_force()
-        self.grab_set()
 
         # 커서 모양 변경
         self.configure(cursor="crosshair")
