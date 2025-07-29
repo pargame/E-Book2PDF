@@ -314,18 +314,17 @@ class ScreenshotWorker(threading.Thread):
                     break
 
                 page_num = i + 1
-                self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 시도...")
+                self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 전체 화면 캡처 중...")
                 
                 file_path = os.path.join(self.app.IMAGE_FOLDER, f"page_{page_num:03d}.png")
                 
-                # 스크린샷 실행
-                pyautogui.screenshot(file_path, region=self.settings['region'])
-                time.sleep(0.1) # 파일 시스템이 처리할 시간 확보
+                # [변경] region 없이 전체 화면을 캡처
+                pyautogui.screenshot(file_path)
+                time.sleep(0.1)
 
-                # 스크린샷 성공 여부 확인
                 if not os.path.exists(file_path):
                     self.app.update_status(f"오류: {page_num}페이지 캡처 실패! 권한을 확인하세요.")
-                    self.stop_requested = True # 오류 발생 시 작업 중단
+                    self.stop_requested = True
                     continue
 
                 self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 성공. 페이지 넘기는 중...")
@@ -338,10 +337,9 @@ class ScreenshotWorker(threading.Thread):
                 
                 time.sleep(self.settings['delay'])
             
-            # 루프가 정상적으로 완료되었을 때만 PDF 변환 실행
             if not self.stop_requested:
-                self.app.update_status("PDF 변환 중...")
-                self.convert_to_pdf()
+                self.app.update_status("이미지 후처리 및 PDF 변환 중...")
+                self.process_and_convert_to_pdf()
                 self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
 
         except pyautogui.PyAutoGUIException as e:
@@ -351,32 +349,40 @@ class ScreenshotWorker(threading.Thread):
         except Exception as e:
             self.app.update_status(f"알 수 없는 오류 발생: {e}")
         finally:
-            # 리스너 정리
             if self.listener:
                 self.listener.stop()
-            # 작업 완료 후 UI 활성화를 메인 스레드에서 실행
             self.app.after(0, self.app.on_task_done)
 
-    def convert_to_pdf(self):
+    def process_and_convert_to_pdf(self):
         image_files = sorted([f for f in os.listdir(self.app.IMAGE_FOLDER) if f.endswith(".png")])
         if not image_files:
             self.app.update_status("캡처된 이미지가 없어 PDF를 생성할 수 없습니다.")
             return
 
-        # PDF 폴더 생성
         if not os.path.exists(self.app.PDF_FOLDER):
             os.makedirs(self.app.PDF_FOLDER)
         
         pdf_path = os.path.join(self.app.PDF_FOLDER, f"{self.settings['pdf_name']}.pdf")
-        
         image_paths = [os.path.join(self.app.IMAGE_FOLDER, f) for f in image_files]
 
+        # [변경] Pillow의 crop을 위한 좌표 계산 (left, top, right, bottom)
+        region = self.settings['region']
+        left = region[0]
+        top = region[1]
+        right = region[0] + region[2]
+        bottom = region[1] + region[3]
+        crop_box = (left, top, right, bottom)
+
         try:
-            # 이미지들을 PDF로 변환
-            pil_images = [Image.open(p).convert('RGB') for p in image_paths]
-            if pil_images:
-                pil_images[0].save(
-                    pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:]
+            cropped_images = []
+            for path in image_paths:
+                with Image.open(path) as img:
+                    cropped_img = img.crop(crop_box)
+                    cropped_images.append(cropped_img.convert('RGB'))
+
+            if cropped_images:
+                cropped_images[0].save(
+                    pdf_path, "PDF", resolution=100.0, save_all=True, append_images=cropped_images[1:]
                 )
         except Exception as e:
             self.app.update_status(f"PDF 변환 오류: {e}")
