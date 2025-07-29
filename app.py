@@ -30,7 +30,7 @@ class CoordinateSelector(ctk.CTkToplevel):
 
     def on_click(self, event):
         """마우스 클릭 시 좌표를 캡처하고 창을 닫습니다."""
-        x, y = pyautogui.position()
+        x, y = event.x_root, event.y_root
         self.destroy()
         self.callback((x, y))
 
