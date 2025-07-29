@@ -172,7 +172,16 @@ class MainPage(ctk.CTkFrame):
             'pdf_name': f"output_{int(time.time())}"
         }
         
-        self.controller.start_screenshot_task(settings)
+        self.set_ui_state("disabled")
+        self.start_countdown(5, settings)
+
+    def start_countdown(self, count, settings):
+        """작업 시작 전 카운트다운을 진행합니다."""
+        if count > 0:
+            self.controller.update_status(f"작업을 {count}초 후에 시작합니다. 캡처할 창을 활성화하세요.")
+            self.after(1000, lambda: self.start_countdown(count - 1, settings))
+        else:
+            self.controller.start_screenshot_task(settings)
 
     def on_turn_method_change(self):
         """페이지 넘김 방식 라디오 버튼 선택 시 UI를 업데이트합니다."""
