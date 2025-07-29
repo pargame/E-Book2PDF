@@ -7,32 +7,6 @@ import sys
 import subprocess
 from PIL import Image
 
-class CoordinateSelector(ctk.CTkToplevel):
-    """화면 전체를 덮는 투명 창을 만들어 좌표를 선택하게 하는 클래스"""
-    def __init__(self, master, callback):
-        super().__init__(master)
-        self.callback = callback
-
-        # 윈도우 설정
-        self.attributes('-fullscreen', True)
-        self.attributes('-alpha', 0.1)
-        self.deiconify()
-        self.lift()
-        self.focus_force()
-
-        # 커서 모양 변경
-        self.configure(cursor="crosshair")
-
-        # 마우스 클릭 이벤트 바인딩
-        self.bind("<Button-1>", self.on_click)
-        self.bind("<Escape>", lambda e: self.destroy())
-
-    def on_click(self, event):
-        """마우스 클릭 시 좌표를 캡처하고 창을 닫습니다."""
-        x, y = event.x_root, event.y_root
-        self.destroy()
-        self.callback((x, y))
-
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -74,10 +48,6 @@ class App(ctk.CTk):
     def show_frame(self, cont):
         frame = self.frames[cont]
         frame.tkraise()
-
-    def open_coord_selector(self, callback):
-        """좌표 선택기를 엽니다."""
-        selector = CoordinateSelector(self, callback)
 
     def start_screenshot_task(self, settings):
         """작업자 스레드를 시작하고 UI를 비활성화합니다."""
@@ -230,28 +200,51 @@ class CoordsPage(ctk.CTkFrame):
         label = ctk.CTkLabel(self, text="스크린샷 범위 설정", font=ctk.CTkFont(size=18, weight="bold"))
         label.pack(pady=20, padx=10)
 
-        top_left_button = ctk.CTkButton(self, text="왼쪽 상단 좌표 설정", command=self.set_top_left)
-        top_left_button.pack(pady=10)
+        self.top_left_button = ctk.CTkButton(self, text="왼쪽 상단 좌표 설정", command=lambda: self.start_capture("top_left"))
+        self.top_left_button.pack(pady=10)
         self.top_left_label = ctk.CTkLabel(self, text="좌표: (미설정)")
         self.top_left_label.pack()
 
-        bottom_right_button = ctk.CTkButton(self, text="오른쪽 하단 좌표 설정", command=self.set_bottom_right)
-        bottom_right_button.pack(pady=10)
+        self.bottom_right_button = ctk.CTkButton(self, text="오른쪽 하단 좌표 설정", command=lambda: self.start_capture("bottom_right"))
+        self.bottom_right_button.pack(pady=10)
         self.bottom_right_label = ctk.CTkLabel(self, text="좌표: (미설정)")
         self.bottom_right_label.pack()
 
-        done_button = ctk.CTkButton(self, text="완료", command=lambda: controller.show_frame(MainPage))
-        done_button.pack(pady=40)
+        self.done_button = ctk.CTkButton(self, text="완료", command=lambda: controller.show_frame(MainPage))
+        self.done_button.pack(pady=40)
 
-    def set_top_left(self):
-        self.controller.open_coord_selector(self.update_top_left)
+    def start_capture(self, target):
+        """지정된 시간 후 마우스 좌표를 캡처하는 프로세스를 시작합니다."""
+        self.top_left_button.configure(state="disabled")
+        self.bottom_right_button.configure(state="disabled")
+        self.done_button.configure(state="disabled")
+        
+        self.countdown(5, target)
+
+    def countdown(self, count, target):
+        if count > 0:
+            self.controller.update_status(f"{count}초 후 마우스 위치를 캡처합니다. 원하는 위치로 이동하세요.")
+            self.after(1000, lambda: self.countdown(count - 1, target))
+        else:
+            try:
+                coords = pyautogui.position()
+                if target == "top_left":
+                    self.update_top_left(coords)
+                else: # bottom_right
+                    self.update_bottom_right(coords)
+                self.controller.update_status("좌표가 캡처되었습니다.")
+            except pyautogui.PyAutoGUIException as e:
+                self.controller.update_status(f"오류: 마우스 위치를 가져올 수 없습니다. ({e})")
+
+            # UI 복원
+            self.top_left_button.configure(state="normal")
+            self.bottom_right_button.configure(state="normal")
+            self.done_button.configure(state="normal")
+            self.after(2000, lambda: self.controller.update_status("준비"))
 
     def update_top_left(self, coords):
         self.controller.top_left_coord = coords
         self.top_left_label.configure(text=f"좌표: {coords}")
-
-    def set_bottom_right(self):
-        self.controller.open_coord_selector(self.update_bottom_right)
 
     def update_bottom_right(self, coords):
         self.controller.bottom_right_coord = coords
