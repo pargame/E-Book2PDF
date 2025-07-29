@@ -14,6 +14,15 @@ class App(ctk.CTk):
         self.geometry("500x450")
         self.resizable(False, False)
 
+        # --- 해상도 스케일링 팩터 계산 ---
+        try:
+            physical_width = pyautogui.size().width
+            logical_width = self.winfo_screenwidth()
+            self.scale_factor = physical_width / logical_width
+        except Exception:
+            self.scale_factor = 1.0 # 계산 실패 시 기본값
+        # --------------------------------
+
         # --- 상수 정의 ---
         self.IMAGE_FOLDER = "screenshots"
         self.PDF_FOLDER = "PDFs"
@@ -281,6 +290,7 @@ class CoordsPage(ctk.CTkFrame):
 
     def show_preview(self):
         try:
+            scale = self.controller.scale_factor
             top_x = int(self.top_x_entry.get())
             top_y = int(self.top_y_entry.get())
             bottom_x = int(self.bottom_x_entry.get())
@@ -290,7 +300,9 @@ class CoordsPage(ctk.CTkFrame):
                 raise ValueError("잘못된 좌표 영역입니다.")
 
             full_screenshot = pyautogui.screenshot()
-            crop_box = (top_x, top_y, bottom_x, bottom_y)
+            
+            # 스케일링 팩터 적용
+            crop_box = (top_x * scale, top_y * scale, bottom_x * scale, bottom_y * scale)
             cropped_image = full_screenshot.crop(crop_box)
             
             PreviewWindow(self, image=cropped_image)
@@ -467,11 +479,12 @@ class ScreenshotWorker(threading.Thread):
         image_paths = [os.path.join(self.app.IMAGE_FOLDER, f) for f in image_files]
 
         # [변경] Pillow의 crop을 위한 좌표 계산 (left, top, right, bottom)
+        scale = self.app.scale_factor
         region = self.settings['region']
-        left = region[0]
-        top = region[1]
-        right = region[0] + region[2]
-        bottom = region[1] + region[3]
+        left = region[0] * scale
+        top = region[1] * scale
+        right = (region[0] + region[2]) * scale
+        bottom = (region[1] + region[3]) * scale
         crop_box = (left, top, right, bottom)
 
         try:
