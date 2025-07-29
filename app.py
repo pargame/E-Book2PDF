@@ -1,5 +1,10 @@
 import customtkinter as ctk
 import pyautogui
+import threading
+import time
+import os
+from PIL import Image
+from pynput.keyboard import Key
 
 class CoordinateSelector(ctk.CTkToplevel):
     """화면 전체를 덮는 투명 창을 만들어 좌표를 선택하게 하는 클래스"""
@@ -55,6 +60,10 @@ class App(ctk.CTk):
 
         self.show_frame(StartPage)
 
+        # 상태바
+        self.status_bar = ctk.CTkLabel(self, text="준비", anchor="w")
+        self.status_bar.pack(side="bottom", fill="x", padx=5, pady=2)
+
     def show_frame(self, cont):
         frame = self.frames[cont]
         frame.tkraise()
@@ -62,6 +71,20 @@ class App(ctk.CTk):
     def open_coord_selector(self, callback):
         """좌표 선택기를 엽니다."""
         selector = CoordinateSelector(self, callback)
+
+    def start_screenshot_task(self, settings):
+        """작업자 스레드를 시작하고 UI를 비활성화합니다."""
+        self.frames[MainPage].set_ui_state("disabled")
+        worker = ScreenshotWorker(settings, self.update_status, self.on_task_done)
+        worker.start()
+
+    def update_status(self, message):
+        """스레드로부터 메시지를 받아 상태바를 업데이트합니다."""
+        self.status_bar.configure(text=message)
+
+    def on_task_done(self):
+        """작업 완료 시 UI를 다시 활성화합니다."""
+        self.frames[MainPage].set_ui_state("normal")
 
 class StartPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -115,20 +138,73 @@ class MainPage(ctk.CTkFrame):
         self.delay_entry.pack(side="left")
 
         # 프로그램 시작 버튼
-        start_button = ctk.CTkButton(self, text="프로그램 시작", width=200, height=40)
-        start_button.pack(pady=40)
+        self.start_button = ctk.CTkButton(self, text="프로그램 시작", width=200, height=40, command=self.start_process)
+        self.start_button.pack(pady=40)
+
+        # UI 요소들을 리스트로 관리 (상태 변경을 위해)
+        self.ui_elements = [self.coords_button, self.page_entry, self.delay_entry, 
+                            self.key_radio, self.click_radio, self.set_click_pos_button, self.start_button]
+
+    def set_ui_state(self, state):
+        """모든 UI 요소의 상태를 변경합니다."""
+        for element in self.ui_elements:
+            element.configure(state=state)
+
+    def start_process(self):
+        """설정값을 검증하고 스크린샷 작업을 시작합니다."""
+        # 값 가져오기
+        try:
+            total_pages = int(self.page_entry.get())
+            delay = float(self.delay_entry.get())
+        except ValueError:
+            self.master.master.update_status("오류: 페이지 수와 딜레이는 숫자여야 합니다.")
+            return
+
+        # 좌표 검증
+        if not self.master.master.top_left_coord or not self.master.master.bottom_right_coord:
+            self.master.master.update_status("오류: 스크린샷 범위가 설정되지 않았습니다.")
+            return
+        
+        width = self.master.master.bottom_right_coord[0] - self.master.master.top_left_coord[0]
+        height = self.master.master.bottom_right_coord[1] - self.master.master.top_left_coord[1]
+        if width <= 0 or height <= 0:
+            self.master.master.update_status("오류: 잘못된 캡처 영역입니다.")
+            return
+
+        # 페이지 넘김 방식 검증
+        turn_method = self.page_turn_method_var.get()
+        turn_details = None
+        if turn_method == 'key':
+            turn_details = self.master.master.page_turn_key
+            if not turn_details:
+                self.master.master.update_status("오류: 페이지 넘김 키가 설정되지 않았습니다.")
+                return
+        else: # click
+            turn_details = self.master.master.page_turn_coord
+            if not turn_details:
+                self.master.master.update_status("오류: 페이지 넘김 클릭 위치가 설정되지 않았습니다.")
+                return
+
+        # 모든 설정값을 딕셔너리로 묶기
+        settings = {
+            'total_pages': total_pages,
+            'delay': delay,
+            'region': (self.master.master.top_left_coord[0], self.master.master.top_left_coord[1], width, height),
+            'turn_method': turn_method,
+            'turn_details': turn_details,
+            'pdf_name': f"output_{int(time.time())}" # 유니크한 파일 이름
+        }
+        
+        self.master.master.start_screenshot_task(settings)
 
     def on_turn_method_change(self):
         """페이지 넘김 방식 라디오 버튼 선택 시 UI를 업데이트합니다."""
         if self.turn_method_var.get() == "click":
             self.set_click_pos_button.pack(side="left", padx=5)
             self.click_pos_label.pack(side="left", padx=5)
-            # 키보드 선택 페이지로 넘어가는 동작 방지
-            self.master.master.frames[KeyPressPage].stop_listening(None)
         else: # key
             self.set_click_pos_button.pack_forget()
             self.click_pos_label.pack_forget()
-            # 키보드 선택 시 해당 설정 페이지로 이동
             self.master.master.show_frame(KeyPressPage)
 
     def set_click_position(self):
@@ -208,6 +284,63 @@ class KeyPressPage(ctk.CTkFrame):
         
         # 키 선택 후 0.5초 뒤에 메인 화면으로 자동 복귀
         self.controller.after(500, lambda: self.controller.show_frame(MainPage))
+
+class ScreenshotWorker(threading.Thread):
+    def __init__(self, settings, status_callback, done_callback):
+        super().__init__()
+        self.settings = settings
+        self.status_callback = status_callback
+        self.done_callback = done_callback
+        self.daemon = True # 메인 앱 종료 시 스레드도 함께 종료
+
+    def run(self):
+        try:
+            image_folder = "screenshots"
+            if not os.path.exists(image_folder):
+                os.makedirs(image_folder)
+
+            # 캡처 루프
+            for i in range(self.settings['total_pages']):
+                page_num = i + 1
+                self.status_callback(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중...")
+                
+                file_name = f"{image_folder}/page_{page_num:03d}.png"
+                pyautogui.screenshot(file_name, region=self.settings['region'])
+
+                # 페이지 넘김
+                if self.settings['turn_method'] == 'click':
+                    pyautogui.click(self.settings['turn_details'])
+                else: # key
+                    pyautogui.press(self.settings['turn_details'])
+                
+                time.sleep(self.settings['delay'])
+            
+            self.status_callback("PDF 변환 중...")
+            self.convert_to_pdf(image_folder)
+            self.status_callback("작업 완료! 'PDFs' 폴더를 확인하세요.")
+
+        except Exception as e:
+            self.status_callback(f"오류 발생: {e}")
+        finally:
+            self.done_callback()
+
+    def convert_to_pdf(self, image_folder):
+        images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
+        if not images:
+            return
+
+        pdf_folder = "PDFs"
+        if not os.path.exists(pdf_folder):
+            os.makedirs(pdf_folder)
+        
+        pdf_path = os.path.join(pdf_folder, f"{self.settings['pdf_name']}.pdf")
+
+        pil_images = [Image.open(os.path.join(image_folder, img)).convert('RGB') for img in images]
+        pil_images[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:])
+
+        # 스크린샷 폴더 비우기
+        for img in images:
+            os.remove(os.path.join(image_folder, img))
 
 
 if __name__ == "__main__":
