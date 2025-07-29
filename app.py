@@ -6,7 +6,6 @@ import os
 import sys
 import subprocess
 from PIL import Image
-from pynput import keyboard
 
 class App(ctk.CTk):
     def __init__(self):
@@ -298,6 +297,7 @@ class ScreenshotWorker(threading.Thread):
         return False # 리스너 중지
 
     def run(self):
+        from pynput import keyboard
         # 키보드 리스너 시작
         self.listener = keyboard.Listener(on_press=self.on_press)
         self.listener.start()
