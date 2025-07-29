@@ -6,6 +6,7 @@ import os
 import sys
 import subprocess
 from PIL import Image
+from pynput import keyboard
 
 class App(ctk.CTk):
     def __init__(self):
@@ -288,8 +289,19 @@ class ScreenshotWorker(threading.Thread):
         self.app = app
         self.settings = settings
         self.daemon = True
+        self.stop_requested = False
+        self.listener = None
+
+    def on_press(self, key):
+        """키가 눌리면 중단 플래그를 설정하고 리스너를 중지합니다."""
+        self.stop_requested = True
+        return False # 리스너 중지
 
     def run(self):
+        # 키보드 리스너 시작
+        self.listener = keyboard.Listener(on_press=self.on_press)
+        self.listener.start()
+
         try:
             # 폴더 생성
             if not os.path.exists(self.app.IMAGE_FOLDER):
@@ -297,8 +309,12 @@ class ScreenshotWorker(threading.Thread):
 
             # 스크린샷 루프
             for i in range(self.settings['total_pages']):
+                if self.stop_requested:
+                    self.app.update_status("작업이 사용자에 의해 중단되었습니다.")
+                    break
+
                 page_num = i + 1
-                self.app.update_status(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중...")
+                self.app.update_status(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중... (중단하려면 아무 키나 누르세요)")
                 
                 file_name = f"{self.app.IMAGE_FOLDER}/page_{page_num:03d}.png"
                 pyautogui.screenshot(file_name, region=self.settings['region'])
@@ -311,9 +327,11 @@ class ScreenshotWorker(threading.Thread):
                 
                 time.sleep(self.settings['delay'])
             
-            self.app.update_status("PDF 변환 중...")
-            self.convert_to_pdf()
-            self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
+            # 루프가 정상적으로 완료되었을 때만 PDF 변환 실행
+            if not self.stop_requested:
+                self.app.update_status("PDF 변환 중...")
+                self.convert_to_pdf()
+                self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
 
         except pyautogui.PyAutoGUIException as e:
             self.app.update_status(f"화면 제어 오류: {e}")
@@ -322,6 +340,9 @@ class ScreenshotWorker(threading.Thread):
         except Exception as e:
             self.app.update_status(f"알 수 없는 오류 발생: {e}")
         finally:
+            # 리스너 정리
+            if self.listener:
+                self.listener.stop()
             # 작업 완료 후 UI 활성화를 메인 스레드에서 실행
             self.app.after(0, self.app.on_task_done)
 
