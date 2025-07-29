@@ -6,3 +6,6 @@ __pycache__/
 
 # Screenshots
 screenshots/
+
+# macOS
+.DS_Store
