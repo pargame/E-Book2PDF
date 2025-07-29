@@ -325,7 +325,7 @@ class KeyPressPage(ctk.CTkFrame):
         label = ctk.CTkLabel(self, text="페이지를 넘기는 데 사용할 키를 누르세요...", font=ctk.CTkFont(size=18))
         label.pack(pady=40, padx=10)
         
-        self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=c tk.CTkFont(size=24, weight="bold"))
+        self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
     def start_listening(self, event):
