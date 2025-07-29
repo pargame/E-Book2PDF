@@ -100,15 +100,18 @@ class MainPage(ctk.CTkFrame):
         
         self.key_radio = ctk.CTkRadioButton(page_turn_frame, text="키보드", variable=self.page_turn_method_var, value="key", command=self.on_turn_method_change)
         self.key_radio.pack(side="left", padx=5)
+        
+        self.set_key_button = ctk.CTkButton(page_turn_frame, text="키 설정", command=lambda: self.controller.show_frame(KeyPressPage))
+        self.key_label = ctk.CTkLabel(page_turn_frame, text="(미설정)")
+        
         self.click_radio = ctk.CTkRadioButton(page_turn_frame, text="마우스 클릭", variable=self.page_turn_method_var, value="click", command=self.on_turn_method_change)
         self.click_radio.pack(side="left", padx=5)
         
         self.set_click_pos_button = ctk.CTkButton(page_turn_frame, text="클릭 위치 설정", command=self.set_click_position)
         self.click_pos_label = ctk.CTkLabel(page_turn_frame, text="")
         
-        # 초기 상태 설정
-        self.set_click_pos_button.pack_forget()
-        self.click_pos_label.pack_forget()
+        # 초기 상태 업데이트
+        self.on_turn_method_change()
 
         # 스크린샷 딜레이
         delay_frame = ctk.CTkFrame(self)
@@ -188,10 +191,16 @@ class MainPage(ctk.CTkFrame):
         if self.page_turn_method_var.get() == "click":
             self.set_click_pos_button.pack(side="left", padx=5)
             self.click_pos_label.pack(side="left", padx=5)
+            self.set_key_button.pack_forget()
+            self.key_label.pack_forget()
         else: # key
             self.set_click_pos_button.pack_forget()
             self.click_pos_label.pack_forget()
-            self.controller.show_frame(KeyPressPage)
+            self.set_key_button.pack(side="left", padx=5)
+            self.key_label.pack(side="left", padx=5)
+            # 키가 설정되면 레이블 업데이트
+            key = self.controller.page_turn_key
+            self.key_label.configure(text=f"({key})" if key else "(미설정)")
 
     def set_click_position(self):
         """클릭 위치 좌표 선택기를 엽니다."""
@@ -207,20 +216,62 @@ class CoordsPage(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
         label = ctk.CTkLabel(self, text="스크린샷 범위 설정", font=ctk.CTkFont(size=18, weight="bold"))
-        label.pack(pady=20, padx=10)
+        label.pack(pady=10, padx=10)
 
-        self.top_left_button = ctk.CTkButton(self, text="왼쪽 상단 좌표 설정", command=lambda: self.start_capture("top_left"))
-        self.top_left_button.pack(pady=10)
-        self.top_left_label = ctk.CTkLabel(self, text="좌표: (미설정)")
-        self.top_left_label.pack()
+        # --- 좌표 입력 프레임 ---
+        coords_frame = ctk.CTkFrame(self)
+        coords_frame.pack(pady=5, padx=10, fill="x")
 
-        self.bottom_right_button = ctk.CTkButton(self, text="오른쪽 하단 좌표 설정", command=lambda: self.start_capture("bottom_right"))
-        self.bottom_right_button.pack(pady=10)
-        self.bottom_right_label = ctk.CTkLabel(self, text="좌표: (미설정)")
-        self.bottom_right_label.pack()
+        # 왼쪽 상단
+        ctk.CTkLabel(coords_frame, text="왼쪽 상단 (X, Y):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.top_x_entry = ctk.CTkEntry(coords_frame, width=70)
+        self.top_x_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.top_y_entry = ctk.CTkEntry(coords_frame, width=70)
+        self.top_y_entry.grid(row=0, column=2, padx=5, pady=5)
+        self.top_left_button = ctk.CTkButton(coords_frame, text="캡처", width=60, command=lambda: self.start_capture("top_left"))
+        self.top_left_button.grid(row=0, column=3, padx=5, pady=5)
 
-        self.done_button = ctk.CTkButton(self, text="완료", command=lambda: controller.show_frame(MainPage))
-        self.done_button.pack(pady=40)
+        # 오른쪽 하단
+        ctk.CTkLabel(coords_frame, text="오른쪽 하단 (X, Y):").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.bottom_x_entry = ctk.CTkEntry(coords_frame, width=70)
+        self.bottom_x_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.bottom_y_entry = ctk.CTkEntry(coords_frame, width=70)
+        self.bottom_y_entry.grid(row=1, column=2, padx=5, pady=5)
+        self.bottom_right_button = ctk.CTkButton(coords_frame, text="캡처", width=60, command=lambda: self.start_capture("bottom_right"))
+        self.bottom_right_button.grid(row=1, column=3, padx=5, pady=5)
+        
+        self.done_button = ctk.CTkButton(self, text="완료", command=self.on_done)
+        self.done_button.pack(pady=20)
+
+        # 페이지가 보일 때마다 컨트롤러의 현재 좌표값으로 필드를 채움
+        self.bind("<Map>", self.on_page_show)
+
+    def on_page_show(self, event):
+        """페이지가 표시될 때 컨트롤러의 좌표로 입력 필드를 업데이트합니다."""
+        if self.controller.top_left_coord:
+            self.top_x_entry.delete(0, "end")
+            self.top_x_entry.insert(0, str(self.controller.top_left_coord[0]))
+            self.top_y_entry.delete(0, "end")
+            self.top_y_entry.insert(0, str(self.controller.top_left_coord[1]))
+        if self.controller.bottom_right_coord:
+            self.bottom_x_entry.delete(0, "end")
+            self.bottom_x_entry.insert(0, str(self.controller.bottom_right_coord[0]))
+            self.bottom_y_entry.delete(0, "end")
+            self.bottom_y_entry.insert(0, str(self.controller.bottom_right_coord[1]))
+
+    def on_done(self):
+        """'완료' 버튼 클릭 시 입력된 좌표를 컨트롤러에 저장하고 메인 페이지로 돌아갑니다."""
+        try:
+            top_x = int(self.top_x_entry.get())
+            top_y = int(self.top_y_entry.get())
+            bottom_x = int(self.bottom_x_entry.get())
+            bottom_y = int(self.bottom_y_entry.get())
+            self.controller.top_left_coord = (top_x, top_y)
+            self.controller.bottom_right_coord = (bottom_x, bottom_y)
+            self.controller.show_frame(MainPage)
+        except (ValueError, TypeError):
+            self.controller.update_status("오류: 모든 좌표는 숫자로 입력해야 합니다.")
+            self.after(2000, lambda: self.controller.update_status("준비"))
 
     def start_capture(self, target):
         """지정된 시간 후 마우스 좌표를 캡처하는 프로세스를 시작합니다."""
@@ -232,7 +283,7 @@ class CoordsPage(ctk.CTkFrame):
 
     def countdown(self, count, target):
         if count > 0:
-            self.controller.update_status(f"{count}초 후 마우스 위치를 캡처합니다. 원하는 위치로 이동하세요.")
+            self.controller.update_status(f"{count}초 후 마우스 위치를 캡처합니다...")
             self.after(1000, lambda: self.countdown(count - 1, target))
         else:
             try:
@@ -252,12 +303,16 @@ class CoordsPage(ctk.CTkFrame):
             self.after(2000, lambda: self.controller.update_status("준비"))
 
     def update_top_left(self, coords):
-        self.controller.top_left_coord = coords
-        self.top_left_label.configure(text=f"좌표: {coords}")
+        self.top_x_entry.delete(0, "end")
+        self.top_x_entry.insert(0, str(coords[0]))
+        self.top_y_entry.delete(0, "end")
+        self.top_y_entry.insert(0, str(coords[1]))
 
     def update_bottom_right(self, coords):
-        self.controller.bottom_right_coord = coords
-        self.bottom_right_label.configure(text=f"좌표: {coords}")
+        self.bottom_x_entry.delete(0, "end")
+        self.bottom_x_entry.insert(0, str(coords[0]))
+        self.bottom_y_entry.delete(0, "end")
+        self.bottom_y_entry.insert(0, str(coords[1]))
 
 class KeyPressPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -270,7 +325,7 @@ class KeyPressPage(ctk.CTkFrame):
         label = ctk.CTkLabel(self, text="페이지를 넘기는 데 사용할 키를 누르세요...", font=ctk.CTkFont(size=18))
         label.pack(pady=40, padx=10)
         
-        self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
+        self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=c tk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
     def start_listening(self, event):
@@ -289,6 +344,10 @@ class KeyPressPage(ctk.CTkFrame):
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
         
+        # 메인 페이지의 키 라벨도 업데이트
+        main_page = self.controller.frames[MainPage]
+        main_page.key_label.configure(text=f"({key_name})")
+
         self.controller.after(500, lambda: self.controller.show_frame(MainPage))
 
 class ScreenshotWorker(threading.Thread):
@@ -297,20 +356,8 @@ class ScreenshotWorker(threading.Thread):
         self.app = app
         self.settings = settings
         self.daemon = True
-        self.stop_requested = False
-        self.listener = None
-
-    def on_press(self, key):
-        """키가 눌리면 중단 플래그를 설정하고 리스너를 중지합니다."""
-        self.stop_requested = True
-        return False # 리스너 중지
 
     def run(self):
-        from pynput import keyboard
-        # 키보드 리스너 시작
-        self.listener = keyboard.Listener(on_press=self.on_press)
-        self.listener.start()
-
         try:
             # 폴더 생성
             if not os.path.exists(self.app.IMAGE_FOLDER):
@@ -318,10 +365,6 @@ class ScreenshotWorker(threading.Thread):
 
             # 스크린샷 루프
             for i in range(self.settings['total_pages']):
-                if self.stop_requested:
-                    self.app.update_status("작업이 사용자에 의해 중단되었습니다.")
-                    break
-
                 page_num = i + 1
                 self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 전체 화면 캡처 중...")
                 
@@ -333,8 +376,8 @@ class ScreenshotWorker(threading.Thread):
 
                 if not os.path.exists(file_path):
                     self.app.update_status(f"오류: {page_num}페이지 캡처 실패! 권한을 확인하세요.")
-                    self.stop_requested = True
-                    continue
+                    # 오류 발생 시 작업 중단
+                    break
 
                 self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 성공. 페이지 넘기는 중...")
 
@@ -346,10 +389,9 @@ class ScreenshotWorker(threading.Thread):
                 
                 time.sleep(self.settings['delay'])
             
-            if not self.stop_requested:
-                self.app.update_status("이미지 후처리 및 PDF 변환 중...")
-                self.process_and_convert_to_pdf()
-                self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
+            self.app.update_status("이미지 후처리 및 PDF 변환 중...")
+            self.process_and_convert_to_pdf()
+            self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
 
         except pyautogui.PyAutoGUIException as e:
             self.app.update_status(f"화면 제어 오류: {e}")
@@ -358,8 +400,6 @@ class ScreenshotWorker(threading.Thread):
         except Exception as e:
             self.app.update_status(f"알 수 없는 오류 발생: {e}")
         finally:
-            if self.listener:
-                self.listener.stop()
             self.app.after(0, self.app.on_task_done)
 
     def process_and_convert_to_pdf(self):
