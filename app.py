@@ -14,14 +14,31 @@ class App(ctk.CTk):
         self.geometry("500x450")
         self.resizable(False, False)
 
-        # --- 해상도 스케일링 팩터 계산 ---
+        # --- 해상도 스케일링 팩터 계산 (macOS Retina 대응) ---
+        self.scale_factor = 1.0  # 기본값
         try:
-            physical_width = pyautogui.size().width
-            logical_width = self.winfo_screenwidth()
-            self.scale_factor = physical_width / logical_width
-        except Exception:
-            self.scale_factor = 1.0 # 계산 실패 시 기본값
-        # --------------------------------
+            if sys.platform == "darwin": # macOS에서만 실행
+                # system_profiler를 사용해 가장 정확한 배율을 계산
+                import re
+                cmd = ["system_profiler", "SPDisplaysDataType"]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                output = result.stdout
+
+                # "Resolution" (물리적 픽셀)과 "UI Looks like" (논리적 픽셀) 찾기
+                # 일부 macOS 버전에 따라 "UI Looks like" 대신 "Looks like" 일 수 있음
+                physical_res_match = re.search(r"Resolution: (\d+) x \d+", output)
+                logical_res_match = re.search(r"(?:UI Looks like|Looks like): (\d+) x \d+", output)
+
+                if physical_res_match and logical_res_match:
+                    physical_width = int(physical_res_match.group(1))
+                    logical_width = int(logical_res_match.group(1))
+                    if logical_width > 0:
+                        self.scale_factor = physical_width / logical_width
+        except Exception as e:
+            # 실패 시 기본값(1.0)을 사용하고, 터미널에 오류를 출력(디버깅용)
+            print(f"macOS 스케일링 팩터 계산 실패: {e}")
+            pass
+        # -------------------------------------------------
 
         # --- 상수 정의 ---
         self.IMAGE_FOLDER = "screenshots"
