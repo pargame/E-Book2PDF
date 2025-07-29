@@ -58,3 +58,25 @@ python3 app.py
 ## 주의사항
 - 스크린샷 작업이 시작되면 완료될 때까지 컴퓨터 사용을 중단하는 것이 좋습니다.
 - `PDFs` 폴더는 프로그램이 자동으로 생성합니다.
+
+---
+
+## 실행 파일 빌드 (개발자용)
+
+이 Python 스크립트를 독립 실행 가능한 macOS 애플리케이션(`.app`)으로 만들려면 아래 절차를 따르세요.
+
+1.  **가상 환경 활성화 및 PyInstaller 설치**
+    아직 설치하지 않았다면, `PyInstaller`를 가상 환경에 설치합니다.
+    ```bash
+    source venv/bin/activate
+    python3 -m pip install pyinstaller
+    ```
+
+2.  **빌드 명령어 실행**
+    프로젝트 루트 폴더에서 아래 명령어를 실행합니다.
+    ```bash
+    venv/bin/pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm
+    ```
+
+3.  **결과물 확인**
+    빌드가 성공적으로 완료되면 `dist` 폴더 안에 `E-Book to PDF.app` 파일이 생성됩니다.
