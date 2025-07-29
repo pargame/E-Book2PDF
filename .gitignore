@@ -7,6 +7,11 @@ __pycache__/
 # Virtual Environment
 venv/
 
+# Build artifacts
+build/
+dist/
+*.spec
+
 # Screenshots
 screenshots/
 
