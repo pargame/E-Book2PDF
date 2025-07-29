@@ -3,8 +3,9 @@ import pyautogui
 import threading
 import time
 import os
+import sys
+import subprocess
 from PIL import Image
-from pynput.keyboard import Key
 
 class CoordinateSelector(ctk.CTkToplevel):
     """화면 전체를 덮는 투명 창을 만들어 좌표를 선택하게 하는 클래스"""
@@ -13,19 +14,19 @@ class CoordinateSelector(ctk.CTkToplevel):
         self.callback = callback
 
         # 윈도우 설정
-        self.attributes('-fullscreen', True)  # 전체 화면
-        self.attributes('-alpha', 0.1)       # 투명도 (0.0 ~ 1.0)
-        self.deiconify()                      # 창을 즉시 표시
-        self.lift()                           # 다른 모든 창 위로 올림
-        self.focus_force()                    # 포커스 강제
-        self.grab_set()                       # 모든 이벤트를 이 창으로 한정
+        self.attributes('-fullscreen', True)
+        self.attributes('-alpha', 0.1)
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self.grab_set()
 
         # 커서 모양 변경
         self.configure(cursor="crosshair")
 
         # 마우스 클릭 이벤트 바인딩
         self.bind("<Button-1>", self.on_click)
-        self.bind("<Escape>", lambda e: self.destroy()) # ESC로 취소
+        self.bind("<Escape>", lambda e: self.destroy())
 
     def on_click(self, event):
         """마우스 클릭 시 좌표를 캡처하고 창을 닫습니다."""
@@ -37,7 +38,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("E-Book to PDF")
-        self.geometry("500x450")
+        self.geometry("500x450") # 원래 크기로 되돌림
         self.resizable(False, False)
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
@@ -46,6 +47,7 @@ class App(ctk.CTk):
         self.top_left_coord = None
         self.bottom_right_coord = None
         self.page_turn_key = None
+        self.page_turn_coord = None
 
         container = ctk.CTkFrame(self)
         container.pack(side="top", fill="both", expand=True)
@@ -53,17 +55,17 @@ class App(ctk.CTk):
         container.grid_columnconfigure(0, weight=1)
 
         self.frames = {}
-        for F in (StartPage, MainPage, CoordsPage, KeyPressPage):
+        for F in (StartPage, MainPage, CoordsPage, KeyPressPage): # PermissionsPage 제거
             frame = F(container, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
 
-        self.show_frame(StartPage)
+        self.show_frame(StartPage) # 앱 시작 시 바로 StartPage 표시
 
         # 상태바
         self.status_bar = ctk.CTkLabel(self, text="준비", anchor="w")
         self.status_bar.pack(side="bottom", fill="x", padx=5, pady=2)
-
+        
     def show_frame(self, cont):
         frame = self.frames[cont]
         frame.tkraise()
@@ -101,12 +103,13 @@ class StartPage(ctk.CTkFrame):
 class MainPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
+        self.controller = controller
         label = ctk.CTkLabel(self, text="메인 설정", font=ctk.CTkFont(size=18, weight="bold"))
         label.pack(pady=20, padx=10)
 
         # 스크린샷 범위 설정
-        coords_button = ctk.CTkButton(self, text="스크린샷 범위 설정", command=lambda: controller.show_frame(CoordsPage))
-        coords_button.pack(pady=10)
+        self.coords_button = ctk.CTkButton(self, text="스크린샷 범위 설정", command=lambda: self.controller.show_frame(CoordsPage))
+        self.coords_button.pack(pady=10)
 
         # 페이지 수 입력
         page_frame = ctk.CTkFrame(self)
@@ -116,12 +119,14 @@ class MainPage(ctk.CTkFrame):
         self.page_entry.pack(side="left")
 
         # 페이지 넘김 방식
+        page_turn_frame = ctk.CTkFrame(self)
+        page_turn_frame.pack(pady=10)
         self.page_turn_method_var = ctk.StringVar(value="key")
         
-        key_radio = ctk.CTkRadioButton(page_turn_frame, text="키보드", variable=self.page_turn_method_var, value="key", command=self.on_turn_method_change)
-        key_radio.pack(side="left", padx=5)
-        click_radio = ctk.CTkRadioButton(page_turn_frame, text="마우스 클릭", variable=self.page_turn_method_var, value="click", command=self.on_turn_method_change)
-        click_radio.pack(side="left", padx=5)
+        self.key_radio = ctk.CTkRadioButton(page_turn_frame, text="키보드", variable=self.page_turn_method_var, value="key", command=self.on_turn_method_change)
+        self.key_radio.pack(side="left", padx=5)
+        self.click_radio = ctk.CTkRadioButton(page_turn_frame, text="마우스 클릭", variable=self.page_turn_method_var, value="click", command=self.on_turn_method_change)
+        self.click_radio.pack(side="left", padx=5)
         
         self.set_click_pos_button = ctk.CTkButton(page_turn_frame, text="클릭 위치 설정", command=self.set_click_position)
         self.click_pos_label = ctk.CTkLabel(page_turn_frame, text="")
@@ -152,68 +157,64 @@ class MainPage(ctk.CTkFrame):
 
     def start_process(self):
         """설정값을 검증하고 스크린샷 작업을 시작합니다."""
-        # 값 가져오기
         try:
             total_pages = int(self.page_entry.get())
             delay = float(self.delay_entry.get())
         except ValueError:
-            self.master.master.update_status("오류: 페이지 수와 딜레이는 숫자여야 합니다.")
+            self.controller.update_status("오류: 페이지 수와 딜레이는 숫자여야 합니다.")
             return
 
-        # 좌표 검증
-        if not self.master.master.top_left_coord or not self.master.master.bottom_right_coord:
-            self.master.master.update_status("오류: 스크린샷 범위가 설정되지 않았습니다.")
+        if not self.controller.top_left_coord or not self.controller.bottom_right_coord:
+            self.controller.update_status("오류: 스크린샷 범위가 설정되지 않았습니다.")
             return
         
-        width = self.master.master.bottom_right_coord[0] - self.master.master.top_left_coord[0]
-        height = self.master.master.bottom_right_coord[1] - self.master.master.top_left_coord[1]
+        width = self.controller.bottom_right_coord[0] - self.controller.top_left_coord[0]
+        height = self.controller.bottom_right_coord[1] - self.controller.top_left_coord[1]
         if width <= 0 or height <= 0:
-            self.master.master.update_status("오류: 잘못된 캡처 영역입니다.")
+            self.controller.update_status("오류: 잘못된 캡처 영역입니다.")
             return
 
-        # 페이지 넘김 방식 검증
         turn_method = self.page_turn_method_var.get()
         turn_details = None
         if turn_method == 'key':
-            turn_details = self.master.master.page_turn_key
+            turn_details = self.controller.page_turn_key
             if not turn_details:
-                self.master.master.update_status("오류: 페이지 넘김 키가 설정되지 않았습니다.")
+                self.controller.update_status("오류: 페이지 넘김 키가 설정되지 않았습니다.")
                 return
         else: # click
-            turn_details = self.master.master.page_turn_coord
+            turn_details = self.controller.page_turn_coord
             if not turn_details:
-                self.master.master.update_status("오류: 페이지 넘김 클릭 위치가 설정되지 않았습니다.")
+                self.controller.update_status("오류: 페이지 넘김 클릭 위치가 설정되지 않았습니다.")
                 return
 
-        # 모든 설정값을 딕셔너리로 묶기
         settings = {
             'total_pages': total_pages,
             'delay': delay,
-            'region': (self.master.master.top_left_coord[0], self.master.master.top_left_coord[1], width, height),
+            'region': (self.controller.top_left_coord[0], self.controller.top_left_coord[1], width, height),
             'turn_method': turn_method,
             'turn_details': turn_details,
-            'pdf_name': f"output_{int(time.time())}" # 유니크한 파일 이름
+            'pdf_name': f"output_{int(time.time())}"
         }
         
-        self.master.master.start_screenshot_task(settings)
+        self.controller.start_screenshot_task(settings)
 
     def on_turn_method_change(self):
         """페이지 넘김 방식 라디오 버튼 선택 시 UI를 업데이트합니다."""
-        if self.turn_method_var.get() == "click":
+        if self.page_turn_method_var.get() == "click":
             self.set_click_pos_button.pack(side="left", padx=5)
             self.click_pos_label.pack(side="left", padx=5)
         else: # key
             self.set_click_pos_button.pack_forget()
             self.click_pos_label.pack_forget()
-            self.master.master.show_frame(KeyPressPage)
+            self.controller.show_frame(KeyPressPage)
 
     def set_click_position(self):
         """클릭 위치 좌표 선택기를 엽니다."""
-        self.master.master.open_coord_selector(self.update_click_position)
+        self.controller.open_coord_selector(self.update_click_position)
 
     def update_click_position(self, coords):
         """선택된 클릭 좌표를 저장하고 레이블을 업데이트합니다."""
-        self.master.master.page_turn_coord = coords
+        self.controller.page_turn_coord = coords
         self.click_pos_label.configure(text=f"위치: {coords}")
 
 class CoordsPage(ctk.CTkFrame):
@@ -255,9 +256,7 @@ class KeyPressPage(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
         
-        # 이 프레임이 화면에 표시될 때 키 입력을 받도록 설정
         self.bind("<Map>", self.start_listening)
-        # 다른 프레임으로 전환될 때 리스너 중지
         self.bind("<Unmap>", self.stop_listening)
 
         label = ctk.CTkLabel(self, text="페이지를 넘기는 데 사용할 키를 누르세요...", font=ctk.CTkFont(size=18))
@@ -270,6 +269,7 @@ class KeyPressPage(ctk.CTkFrame):
         """키 입력 감지를 시작합니다."""
         self.controller.bind("<KeyPress>", self.on_key_press)
         self.key_label.configure(text="(입력 대기 중)")
+        self.focus_set()
 
     def stop_listening(self, event):
         """키 입력 감지를 중지합니다."""
@@ -277,12 +277,10 @@ class KeyPressPage(ctk.CTkFrame):
 
     def on_key_press(self, event):
         """키가 눌렸을 때 호출됩니다."""
-        # keysym을 사용하여 'Right', 'space' 같은 특수키 이름도 얻음
         key_name = event.keysym
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
         
-        # 키 선택 후 0.5초 뒤에 메인 화면으로 자동 복귀
         self.controller.after(500, lambda: self.controller.show_frame(MainPage))
 
 class ScreenshotWorker(threading.Thread):
@@ -291,7 +289,7 @@ class ScreenshotWorker(threading.Thread):
         self.settings = settings
         self.status_callback = status_callback
         self.done_callback = done_callback
-        self.daemon = True # 메인 앱 종료 시 스레드도 함께 종료
+        self.daemon = True
 
     def run(self):
         try:
@@ -299,7 +297,6 @@ class ScreenshotWorker(threading.Thread):
             if not os.path.exists(image_folder):
                 os.makedirs(image_folder)
 
-            # 캡처 루프
             for i in range(self.settings['total_pages']):
                 page_num = i + 1
                 self.status_callback(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중...")
@@ -307,7 +304,6 @@ class ScreenshotWorker(threading.Thread):
                 file_name = f"{image_folder}/page_{page_num:03d}.png"
                 pyautogui.screenshot(file_name, region=self.settings['region'])
 
-                # 페이지 넘김
                 if self.settings['turn_method'] == 'click':
                     pyautogui.click(self.settings['turn_details'])
                 else: # key
@@ -322,11 +318,13 @@ class ScreenshotWorker(threading.Thread):
         except Exception as e:
             self.status_callback(f"오류 발생: {e}")
         finally:
-            self.done_callback()
+            if self.done_callback:
+                self.done_callback.__self__.after(0, self.done_callback)
 
     def convert_to_pdf(self, image_folder):
         images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
         if not images:
+            self.status_callback("캡처된 이미지가 없어 PDF를 생성할 수 없습니다.")
             return
 
         pdf_folder = "PDFs"
@@ -335,12 +333,18 @@ class ScreenshotWorker(threading.Thread):
         
         pdf_path = os.path.join(pdf_folder, f"{self.settings['pdf_name']}.pdf")
 
-        pil_images = [Image.open(os.path.join(image_folder, img)).convert('RGB') for img in images]
-        pil_images[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:])
-
-        # 스크린샷 폴더 비우기
-        for img in images:
-            os.remove(os.path.join(image_folder, img))
+        try:
+            pil_images = [Image.open(os.path.join(image_folder, img)).convert('RGB') for img in images]
+            if pil_images:
+                pil_images[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:])
+        except Exception as e:
+            self.status_callback(f"PDF 변환 오류: {e}")
+        finally:
+            for img in images:
+                try:
+                    os.remove(os.path.join(image_folder, img))
+                except OSError as e:
+                    self.status_callback(f"이미지 파일 삭제 오류: {e}")
 
 
 if __name__ == "__main__":

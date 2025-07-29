@@ -1,4 +1,4 @@
-# Gemini E-Book2PDF (GUI Edition) 최종 유지보수 가이드
+# Gemini E-Book2PDF (CLI Edition) 최종 유지보수 가이드
 
 ### 프로젝트 목표
 사용자가 파이썬이나 터미널에 대한 지식 없이도, GUI를 통해 전자책 화면을 캡처하고 PDF로 변환할 수 있는 독립 실행형 데스크톱 애플리케이션을 제공한다.
@@ -27,20 +27,28 @@
     -   **Worker -> GUI**: 작업 진행 상황(예: "5/100 페이지 캡처 중...")은 `status_callback` 함수를 통해 메인 스레드로 전달된다. `App` 클래스의 `update_status` 메소드가 이 메시지를 받아 상태바 레이블의 텍스트를 변경한다.
     -   **작업 완료**: 작업이 모두 끝나면 `done_callback` 함수가 호출되어, `App`의 `on_task_done` 메소드가 비활성화했던 UI를 다시 활성화(`normal`)시킨다.
 
-### 다중 OS 빌드 및 배포 전략
+### CLI 실행 및 권한 설정
 
-이 애플리케이션은 **각 운영체제에서 별도로 빌드**해야 한다.
+이 애플리케이션은 CLI에서 직접 실행할 수 있다.
 
-1.  **빌드 도구**: `PyInstaller`를 사용한다. `requirements.txt`에 포함되어 있지 않으므로, 빌드 시점에 가상 환경에 별도로 설치해야 한다. (`python3 -m pip install pyinstaller`)
+**macOS 권한 설정 (필수):**
+`pyautogui` 라이브러리는 macOS에서 화면을 제어하고 스크린샷을 찍기 위해 **"손쉬운 사용"** 및 **"화면 기록"** 권한이 필수적이다. 이 권한들은 앱 자체가 아닌, **스크린샷 기능을 요청하는 프로세스(즉, 터미널 애플리케이션, 예: Terminal.app 또는 iTerm2)에 부여되어야 한다.**
 
-2.  **빌드 명령어**:
-    -   **macOS**: `venv/bin/pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm`
-    -   **Windows**: `venv\Scripts\pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm`
+다음 단계를 따라 권한을 부여해야 한다:
+1.  **`시스템 설정` (System Settings)을 연다.**
+2.  **`개인정보 및 보안` (Privacy & Security)으로 이동한다.**
+3.  **`손쉬운 사용` (Accessibility)을 클릭한다.**
+    *   목록에서 현재 사용 중인 터미널 애플리케이션(예: `Terminal` 또는 `iTerm`)을 찾아 체크박스를 선택하여 권한을 부여한다. 만약 목록에 없다면, `+` 버튼을 눌러 `응용 프로그램` 폴더에서 해당 터미널 앱을 직접 추가해야 한다.
+4.  **`화면 기록` (Screen Recording)을 클릭한다.**
+    *   목록에서 현재 사용 중인 터미널 애플리케이션을 찾아 체크박스를 선택하여 권한을 부여한다. 만약 목록에 없다면, `+` 버튼을 눌러 `응용 프로그램` 폴더에서 해당 터미널 앱을 직접 추가해야 한다.
 
-3.  **배포 방식**: **GitHub Releases**
-    -   빌드된 결과물들(`.app`, `.exe`)은 Git 저장소에 직접 커밋하지 않는다.
-    -   대신, 각 OS에서 빌드한 결과물을 압축(`E-Book to PDF.app.zip` 등)하여, GitHub 저장소의 "Releases" 페이지에 업로드한다.
-    -   `README.md`의 "실행 파일 빌드 및 배포" 섹션에 이 과정이 상세히 기술되어 있으니, 사용자가 직접 릴리스를 생성할 수 있도록 안내해야 한다.
+**권한 부여 후 터미널 재시작:**
+권한을 부여한 후에는 터미널 애플리케이션을 완전히 종료했다가 다시 실행해야 변경 사항이 적용된다.
+
+**CLI 실행 명령어:**
+```bash
+./venv/bin/python app.py
+```
 
 ### 향후 유지보수 가이드
 - **UI 수정**: 모든 UI 요소는 각 페이지 프레임 클래스(`StartPage`, `MainPage` 등)의 `__init__` 메소드 안에 정의되어 있다. 레이아웃이나 위젯을 수정하려면 이 부분을 확인하면 된다.
