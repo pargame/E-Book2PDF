@@ -93,15 +93,18 @@ class MainPage(ctk.CTkFrame):
         self.page_entry.pack(side="left")
 
         # 페이지 넘김 방식
-        page_turn_frame = ctk.CTkFrame(self)
-        page_turn_frame.pack(pady=10)
-        ctk.CTkLabel(page_turn_frame, text="페이지 넘김 방식:").pack(side="left", padx=5)
-        self.turn_method_var = ctk.StringVar(value="key")
-        key_radio = ctk.CTkRadioButton(page_turn_frame, text="키보드", variable=self.turn_method_var, value="key", command=lambda: controller.show_frame(KeyPressPage))
+        self.page_turn_method_var = ctk.StringVar(value="key")
+        
+        key_radio = ctk.CTkRadioButton(page_turn_frame, text="키보드", variable=self.page_turn_method_var, value="key", command=self.on_turn_method_change)
         key_radio.pack(side="left", padx=5)
-        click_radio = ctk.CTkRadioButton(page_turn_frame, text="마우스 클릭", variable=self.turn_method_var, value="click")
+        click_radio = ctk.CTkRadioButton(page_turn_frame, text="마우스 클릭", variable=self.page_turn_method_var, value="click", command=self.on_turn_method_change)
         click_radio.pack(side="left", padx=5)
-        # TODO: 스와이프 기능 추가시 라디오버튼 추가
+        
+        self.set_click_pos_button = ctk.CTkButton(page_turn_frame, text="클릭 위치 설정", command=self.set_click_position)
+        self.click_pos_label = ctk.CTkLabel(page_turn_frame, text="")
+        
+        # 초기 상태 업데이트
+        self.on_turn_method_change()
 
         # 스크린샷 딜레이
         delay_frame = ctk.CTkFrame(self)
@@ -114,6 +117,28 @@ class MainPage(ctk.CTkFrame):
         # 프로그램 시작 버튼
         start_button = ctk.CTkButton(self, text="프로그램 시작", width=200, height=40)
         start_button.pack(pady=40)
+
+    def on_turn_method_change(self):
+        """페이지 넘김 방식 라디오 버튼 선택 시 UI를 업데이트합니다."""
+        if self.turn_method_var.get() == "click":
+            self.set_click_pos_button.pack(side="left", padx=5)
+            self.click_pos_label.pack(side="left", padx=5)
+            # 키보드 선택 페이지로 넘어가는 동작 방지
+            self.master.master.frames[KeyPressPage].stop_listening(None)
+        else: # key
+            self.set_click_pos_button.pack_forget()
+            self.click_pos_label.pack_forget()
+            # 키보드 선택 시 해당 설정 페이지로 이동
+            self.master.master.show_frame(KeyPressPage)
+
+    def set_click_position(self):
+        """클릭 위치 좌표 선택기를 엽니다."""
+        self.master.master.open_coord_selector(self.update_click_position)
+
+    def update_click_position(self, coords):
+        """선택된 클릭 좌표를 저장하고 레이블을 업데이트합니다."""
+        self.master.master.page_turn_coord = coords
+        self.click_pos_label.configure(text=f"위치: {coords}")
 
 class CoordsPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -152,16 +177,37 @@ class CoordsPage(ctk.CTkFrame):
 class KeyPressPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
-        label = ctk.CTkLabel(self, text="키를 입력해주세요...", font=ctk.CTkFont(size=18))
+        self.controller = controller
+        
+        # 이 프레임이 화면에 표시될 때 키 입력을 받도록 설정
+        self.bind("<Map>", self.start_listening)
+        # 다른 프레임으로 전환될 때 리스너 중지
+        self.bind("<Unmap>", self.stop_listening)
+
+        label = ctk.CTkLabel(self, text="페이지를 넘기는 데 사용할 키를 누르세요...", font=ctk.CTkFont(size=18))
         label.pack(pady=40, padx=10)
         
         self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
-        # TODO: 실제 키 입력 감지 로직 추가 후, 자동으로 MainPage로 돌아가도록 구현
-        # 임시로 버튼 추가
-        temp_done_button = ctk.CTkButton(self, text="(임시) 설정 완료", command=lambda: controller.show_frame(MainPage))
-        temp_done_button.pack(pady=20)
+    def start_listening(self, event):
+        """키 입력 감지를 시작합니다."""
+        self.controller.bind("<KeyPress>", self.on_key_press)
+        self.key_label.configure(text="(입력 대기 중)")
+
+    def stop_listening(self, event):
+        """키 입력 감지를 중지합니다."""
+        self.controller.unbind("<KeyPress>")
+
+    def on_key_press(self, event):
+        """키가 눌렸을 때 호출됩니다."""
+        # keysym을 사용하여 'Right', 'space' 같은 특수키 이름도 얻음
+        key_name = event.keysym
+        self.controller.page_turn_key = key_name
+        self.key_label.configure(text=f"선택된 키: '{key_name}'")
+        
+        # 키 선택 후 0.5초 뒤에 메인 화면으로 자동 복귀
+        self.controller.after(500, lambda: self.controller.show_frame(MainPage))
 
 
 if __name__ == "__main__":
