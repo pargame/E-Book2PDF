@@ -34,7 +34,7 @@
 2. **자동화 스크립트 실행**
    터미널에서 `main.py`를 실행합니다.
    ```bash
-   python main.py
+   python3 main.py
    ```
 
 3. **좌표 입력 (마우스 클릭)**
@@ -56,7 +56,7 @@
 ## 좌표 확인용 보조 스크립트 (선택 사항)
 만약 특정 위치의 좌표(x, y)를 미리 확인하고 싶다면 `get_mouse_coords.py` 스크립트를 사용할 수 있습니다.
 ```bash
-python get_mouse_coords.py
+python3 get_mouse_coords.py
 ```
 실행 후 화면의 원하는 지점을 클릭하면 해당 위치의 좌표가 터미널에 출력됩니다.
 
