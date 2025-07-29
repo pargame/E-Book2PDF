@@ -59,24 +59,58 @@ python3 app.py
 - 스크린샷 작업이 시작되면 완료될 때까지 컴퓨터 사용을 중단하는 것이 좋습니다.
 - `PDFs` 폴더는 프로그램이 자동으로 생성합니다.
 
----
+## 실행 파일 빌드 및 배포 (개발자용)
 
-## 실행 파일 빌드 (개발자용)
+이 프로젝트를 다른 사용자들이 쉽게 사용할 수 있도록 각 운영체제에 맞는 실행 파일로 만들어 배포할 수 있습니다.
 
-이 Python 스크립트를 독립 실행 가능한 macOS 애플리케이션(`.app`)으로 만들려면 아래 절차를 따르세요.
+### 1. 빌드 환경 준비
+- **macOS**: Xcode Command Line Tools가 설치되어 있어야 합니다.
+- **Windows**: Python 공식 설치 프로그램으로 Python을 설치해야 합니다.
+- 각 OS에서 프로젝트를 `git clone`하고, 아래 명령어로 가상 환경 설정 및 라이브러리 설치를 완료하세요.
+  ```bash
+  # 가상 환경 생성 및 활성화
+  python3 -m venv venv
+  source venv/bin/activate  # macOS/Linux
+  # venv\Scripts\activate   # Windows
 
-1.  **가상 환경 활성화 및 PyInstaller 설치**
-    아직 설치하지 않았다면, `PyInstaller`를 가상 환경에 설치합니다.
-    ```bash
-    source venv/bin/activate
-    python3 -m pip install pyinstaller
-    ```
+  # 라이브러리 설치 (PyInstaller 포함)
+  python3 -m pip install -r requirements.txt
+  python3 -m pip install pyinstaller
+  ```
 
-2.  **빌드 명령어 실행**
-    프로젝트 루트 폴더에서 아래 명령어를 실행합니다.
-    ```bash
-    venv/bin/pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm
-    ```
+### 2. OS별 빌드 실행
+각 운영체제 환경에서 아래의 해당 명령어를 실행하면 `dist` 폴더에 실행 파일이 생성됩니다.
 
-3.  **결과물 확인**
-    빌드가 성공적으로 완료되면 `dist` 폴더 안에 `E-Book to PDF.app` 파일이 생성됩니다.
+- **macOS (.app)**
+  ```bash
+  venv/bin/pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm
+  ```
+- **Windows (.exe)**
+  ```bash
+  venv\Scripts\pyinstaller app.py --name "E-Book to PDF" --windowed --onefile --noconfirm
+  ```
+
+### 3. GitHub Releases를 통한 배포 방법
+**중요**: 빌드된 실행 파일은 Git 저장소에 직접 커밋하지 마세요. 아래 절차에 따라 GitHub Releases에 업로드해야 합니다.
+
+1.  **결과물 압축**:
+    -   macOS: `dist` 폴더에 생성된 `E-Book to PDF.app`을 마우스 오른쪽 버튼으로 클릭하여 **"E-Book to PDF" 압축**을 선택해 `.zip` 파일로 만듭니다.
+    -   Windows: `dist` 폴더의 `E-Book to PDF.exe` 파일을 그대로 사용하거나 `.zip`으로 압축합니다.
+
+2.  **GitHub 저장소에서 릴리스 생성**:
+    -   브라우저에서 당신의 GitHub 저장소 페이지로 이동합니다.
+    -   오른쪽 사이드바에서 **"Releases"**를 클릭합니다.
+    -   **"Create a new release"** 또는 **"Draft a new release"** 버튼을 클릭합니다.
+
+3.  **릴리스 정보 입력**:
+    -   **"Choose a tag"**: 버전 태그를 입력하고 만듭니다. (예: `v1.0.0`)
+    -   **"Release title"**: 릴리스 제목을 입력합니다. (예: `v1.0.0 - First Release`)
+    -   **"Describe this release"**: 이 버전의 주요 변경 사항이나 새로운 기능을 간략히 설명합니다.
+
+4.  **파일 첨부**:
+    -   **"Attach binaries by dropping them here or selecting them."** 박스 안에, 1단계에서 준비한 OS별 압축 파일들(`E-Book to PDF.app.zip`, `E-Book to PDF.exe` 등)을 끌어다 놓거나 선택하여 업로드합니다.
+
+5.  **릴리스 발행**:
+    -   **"Publish release"** 버튼을 클릭하여 릴리스를 최종 발행합니다.
+
+이제 사용자들은 당신의 GitHub Releases 페이지에서 자신의 OS에 맞는 실행 파일을 직접 다운로드할 수 있습니다.
