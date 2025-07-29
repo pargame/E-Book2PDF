@@ -131,8 +131,9 @@ class MainPage(ctk.CTkFrame):
         self.set_click_pos_button = ctk.CTkButton(page_turn_frame, text="클릭 위치 설정", command=self.set_click_position)
         self.click_pos_label = ctk.CTkLabel(page_turn_frame, text="")
         
-        # 초기 상태 업데이트
-        self.on_turn_method_change()
+        # 초기 상태 설정
+        self.set_click_pos_button.pack_forget()
+        self.click_pos_label.pack_forget()
 
         # 스크린샷 딜레이
         delay_frame = ctk.CTkFrame(self)
