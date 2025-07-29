@@ -1,4 +1,32 @@
 import customtkinter as ctk
+import pyautogui
+
+class CoordinateSelector(ctk.CTkToplevel):
+    """화면 전체를 덮는 투명 창을 만들어 좌표를 선택하게 하는 클래스"""
+    def __init__(self, master, callback):
+        super().__init__(master)
+        self.callback = callback
+
+        # 윈도우 설정
+        self.attributes('-fullscreen', True)  # 전체 화면
+        self.attributes('-alpha', 0.1)       # 투명도 (0.0 ~ 1.0)
+        self.deiconify()                      # 창을 즉시 표시
+        self.lift()                           # 다른 모든 창 위로 올림
+        self.focus_force()                    # 포커스 강제
+        self.grab_set()                       # 모든 이벤트를 이 창으로 한정
+
+        # 커서 모양 변경
+        self.configure(cursor="crosshair")
+
+        # 마우스 클릭 이벤트 바인딩
+        self.bind("<Button-1>", self.on_click)
+        self.bind("<Escape>", lambda e: self.destroy()) # ESC로 취소
+
+    def on_click(self, event):
+        """마우스 클릭 시 좌표를 캡처하고 창을 닫습니다."""
+        x, y = pyautogui.position()
+        self.destroy()
+        self.callback((x, y))
 
 class App(ctk.CTk):
     def __init__(self):
@@ -8,6 +36,11 @@ class App(ctk.CTk):
         self.resizable(False, False)
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
+
+        # 설정값을 저장할 변수
+        self.top_left_coord = None
+        self.bottom_right_coord = None
+        self.page_turn_key = None
 
         container = ctk.CTkFrame(self)
         container.pack(side="top", fill="both", expand=True)
@@ -25,6 +58,10 @@ class App(ctk.CTk):
     def show_frame(self, cont):
         frame = self.frames[cont]
         frame.tkraise()
+
+    def open_coord_selector(self, callback):
+        """좌표 선택기를 엽니다."""
+        selector = CoordinateSelector(self, callback)
 
 class StartPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -81,21 +118,36 @@ class MainPage(ctk.CTkFrame):
 class CoordsPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
+        self.controller = controller
         label = ctk.CTkLabel(self, text="스크린샷 범위 설정", font=ctk.CTkFont(size=18, weight="bold"))
         label.pack(pady=20, padx=10)
 
-        top_left_button = ctk.CTkButton(self, text="왼쪽 상단 좌표 설정")
+        top_left_button = ctk.CTkButton(self, text="왼쪽 상단 좌표 설정", command=self.set_top_left)
         top_left_button.pack(pady=10)
         self.top_left_label = ctk.CTkLabel(self, text="좌표: (미설정)")
         self.top_left_label.pack()
 
-        bottom_right_button = ctk.CTkButton(self, text="오른쪽 하단 좌표 설정")
+        bottom_right_button = ctk.CTkButton(self, text="오른쪽 하단 좌표 설정", command=self.set_bottom_right)
         bottom_right_button.pack(pady=10)
         self.bottom_right_label = ctk.CTkLabel(self, text="좌표: (미설정)")
         self.bottom_right_label.pack()
 
         done_button = ctk.CTkButton(self, text="완료", command=lambda: controller.show_frame(MainPage))
         done_button.pack(pady=40)
+
+    def set_top_left(self):
+        self.controller.open_coord_selector(self.update_top_left)
+
+    def update_top_left(self, coords):
+        self.controller.top_left_coord = coords
+        self.top_left_label.configure(text=f"좌표: {coords}")
+
+    def set_bottom_right(self):
+        self.controller.open_coord_selector(self.update_bottom_right)
+
+    def update_bottom_right(self, coords):
+        self.controller.bottom_right_coord = coords
+        self.bottom_right_label.configure(text=f"좌표: {coords}")
 
 class KeyPressPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
