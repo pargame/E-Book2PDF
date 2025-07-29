@@ -138,9 +138,14 @@ class MainPage(ctk.CTkFrame):
         """설정값을 검증하고 스크린샷 작업을 시작합니다."""
         try:
             total_pages = int(self.page_entry.get())
+            if total_pages <= 0:
+                self.controller.update_status("오류: 페이지 수는 1 이상이어야 합니다.")
+                self.after(2000, lambda: self.controller.update_status("준비"))
+                return
             delay = float(self.delay_entry.get())
-        except ValueError:
+        except (ValueError, TypeError):
             self.controller.update_status("오류: 페이지 수와 딜레이는 숫자여야 합니다.")
+            self.after(2000, lambda: self.controller.update_status("준비"))
             return
 
         if not self.controller.top_left_coord or not self.controller.bottom_right_coord:
@@ -211,6 +216,34 @@ class MainPage(ctk.CTkFrame):
         self.controller.page_turn_coord = coords
         self.click_pos_label.configure(text=f"위치: {coords}")
 
+class PreviewWindow(ctk.CTkToplevel):
+    """캡처된 영역의 미리보기를 보여주는 창"""
+    def __init__(self, master, image):
+        super().__init__(master)
+        
+        self.grab_set()
+        self.title("미리보기")
+        self.attributes("-topmost", True)
+
+        ctk_image = ctk.CTkImage(light_image=image, dark_image=image, size=image.size)
+        
+        # 화면 크기보다 이미지가 크면 축소해서 보여주기
+        max_width = self.master.winfo_screenwidth() * 0.8
+        max_height = self.master.winfo_screenheight() * 0.8
+        img_width, img_height = image.size
+        
+        if img_width > max_width or img_height > max_height:
+            ratio = min(max_width / img_width, max_height / img_height)
+            new_size = (int(img_width * ratio), int(img_height * ratio))
+            ctk_image.configure(size=new_size)
+        
+        image_label = ctk.CTkLabel(self, image=ctk_image, text="")
+        image_label.pack(pady=10, padx=10)
+        
+        close_button = ctk.CTkButton(self, text="닫기", command=self.destroy)
+        close_button.pack(pady=10)
+
+
 class CoordsPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -218,11 +251,9 @@ class CoordsPage(ctk.CTkFrame):
         label = ctk.CTkLabel(self, text="스크린샷 범위 설정", font=ctk.CTkFont(size=18, weight="bold"))
         label.pack(pady=10, padx=10)
 
-        # --- 좌표 입력 프레임 ---
         coords_frame = ctk.CTkFrame(self)
         coords_frame.pack(pady=5, padx=10, fill="x")
 
-        # 왼쪽 상단
         ctk.CTkLabel(coords_frame, text="왼쪽 상단 (X, Y):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.top_x_entry = ctk.CTkEntry(coords_frame, width=70)
         self.top_x_entry.grid(row=0, column=1, padx=5, pady=5)
@@ -231,7 +262,6 @@ class CoordsPage(ctk.CTkFrame):
         self.top_left_button = ctk.CTkButton(coords_frame, text="캡처", width=60, command=lambda: self.start_capture("top_left"))
         self.top_left_button.grid(row=0, column=3, padx=5, pady=5)
 
-        # 오른쪽 하단
         ctk.CTkLabel(coords_frame, text="오른쪽 하단 (X, Y):").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.bottom_x_entry = ctk.CTkEntry(coords_frame, width=70)
         self.bottom_x_entry.grid(row=1, column=1, padx=5, pady=5)
@@ -240,14 +270,37 @@ class CoordsPage(ctk.CTkFrame):
         self.bottom_right_button = ctk.CTkButton(coords_frame, text="캡처", width=60, command=lambda: self.start_capture("bottom_right"))
         self.bottom_right_button.grid(row=1, column=3, padx=5, pady=5)
         
-        self.done_button = ctk.CTkButton(self, text="완료", command=self.on_done)
-        self.done_button.pack(pady=20)
+        action_frame = ctk.CTkFrame(self)
+        action_frame.pack(pady=10)
+        self.preview_button = ctk.CTkButton(action_frame, text="미리보기 확인", command=self.show_preview)
+        self.preview_button.pack(side="left", padx=10)
+        self.done_button = ctk.CTkButton(action_frame, text="완료", command=self.on_done)
+        self.done_button.pack(side="left", padx=10)
 
-        # 페이지가 보일 때마다 컨트롤러의 현재 좌표값으로 필드를 채움
         self.bind("<Map>", self.on_page_show)
 
+    def show_preview(self):
+        try:
+            top_x = int(self.top_x_entry.get())
+            top_y = int(self.top_y_entry.get())
+            bottom_x = int(self.bottom_x_entry.get())
+            bottom_y = int(self.bottom_y_entry.get())
+            
+            if (bottom_x - top_x) <= 0 or (bottom_y - top_y) <= 0:
+                raise ValueError("잘못된 좌표 영역입니다.")
+
+            full_screenshot = pyautogui.screenshot()
+            crop_box = (top_x, top_y, bottom_x, bottom_y)
+            cropped_image = full_screenshot.crop(crop_box)
+            
+            PreviewWindow(self, image=cropped_image)
+
+        except (ValueError, TypeError) as e:
+            self.controller.update_status(f"오류: {e}")
+        except Exception as e:
+            self.controller.update_status(f"미리보기 오류: {e}")
+
     def on_page_show(self, event):
-        """페이지가 표시될 때 컨트롤러의 좌표로 입력 필드를 업데이트합니다."""
         if self.controller.top_left_coord:
             self.top_x_entry.delete(0, "end")
             self.top_x_entry.insert(0, str(self.controller.top_left_coord[0]))
@@ -260,7 +313,6 @@ class CoordsPage(ctk.CTkFrame):
             self.bottom_y_entry.insert(0, str(self.controller.bottom_right_coord[1]))
 
     def on_done(self):
-        """'완료' 버튼 클릭 시 입력된 좌표를 컨트롤러에 저장하고 메인 페이지로 돌아갑니다."""
         try:
             top_x = int(self.top_x_entry.get())
             top_y = int(self.top_y_entry.get())
@@ -274,10 +326,10 @@ class CoordsPage(ctk.CTkFrame):
             self.after(2000, lambda: self.controller.update_status("준비"))
 
     def start_capture(self, target):
-        """지정된 시간 후 마우스 좌표를 캡처하는 프로세스를 시작합니다."""
         self.top_left_button.configure(state="disabled")
         self.bottom_right_button.configure(state="disabled")
         self.done_button.configure(state="disabled")
+        self.preview_button.configure(state="disabled")
         
         self.countdown(5, target)
 
@@ -290,16 +342,16 @@ class CoordsPage(ctk.CTkFrame):
                 coords = pyautogui.position()
                 if target == "top_left":
                     self.update_top_left(coords)
-                else: # bottom_right
+                else:
                     self.update_bottom_right(coords)
                 self.controller.update_status("좌표가 캡처되었습니다.")
             except pyautogui.PyAutoGUIException as e:
                 self.controller.update_status(f"오류: 마우스 위치를 가져올 수 없습니다. ({e})")
 
-            # UI 복원
             self.top_left_button.configure(state="normal")
             self.bottom_right_button.configure(state="normal")
             self.done_button.configure(state="normal")
+            self.preview_button.configure(state="normal")
             self.after(2000, lambda: self.controller.update_status("준비"))
 
     def update_top_left(self, coords):
