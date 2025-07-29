@@ -38,8 +38,14 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("E-Book to PDF")
-        self.geometry("500x450") # 원래 크기로 되돌림
+        self.geometry("500x450")
         self.resizable(False, False)
+
+        # --- 상수 정의 ---
+        self.IMAGE_FOLDER = "screenshots"
+        self.PDF_FOLDER = "PDFs"
+        # ----------------
+
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
@@ -77,7 +83,7 @@ class App(ctk.CTk):
     def start_screenshot_task(self, settings):
         """작업자 스레드를 시작하고 UI를 비활성화합니다."""
         self.frames[MainPage].set_ui_state("disabled")
-        worker = ScreenshotWorker(settings, self.update_status, self.on_task_done)
+        worker = ScreenshotWorker(self, settings) # app 인스턴스를 직접 전달
         worker.start()
 
     def update_status(self, message):
@@ -285,26 +291,27 @@ class KeyPressPage(ctk.CTkFrame):
         self.controller.after(500, lambda: self.controller.show_frame(MainPage))
 
 class ScreenshotWorker(threading.Thread):
-    def __init__(self, settings, status_callback, done_callback):
+    def __init__(self, app, settings):
         super().__init__()
+        self.app = app
         self.settings = settings
-        self.status_callback = status_callback
-        self.done_callback = done_callback
         self.daemon = True
 
     def run(self):
         try:
-            image_folder = "screenshots"
-            if not os.path.exists(image_folder):
-                os.makedirs(image_folder)
+            # 폴더 생성
+            if not os.path.exists(self.app.IMAGE_FOLDER):
+                os.makedirs(self.app.IMAGE_FOLDER)
 
+            # 스크린샷 루프
             for i in range(self.settings['total_pages']):
                 page_num = i + 1
-                self.status_callback(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중...")
+                self.app.update_status(f"{page_num}/{self.settings['total_pages']} 페이지 캡처 중...")
                 
-                file_name = f"{image_folder}/page_{page_num:03d}.png"
+                file_name = f"{self.app.IMAGE_FOLDER}/page_{page_num:03d}.png"
                 pyautogui.screenshot(file_name, region=self.settings['region'])
 
+                # 페이지 넘김
                 if self.settings['turn_method'] == 'click':
                     pyautogui.click(self.settings['turn_details'])
                 else: # key
@@ -312,40 +319,50 @@ class ScreenshotWorker(threading.Thread):
                 
                 time.sleep(self.settings['delay'])
             
-            self.status_callback("PDF 변환 중...")
-            self.convert_to_pdf(image_folder)
-            self.status_callback("작업 완료! 'PDFs' 폴더를 확인하세요.")
+            self.app.update_status("PDF 변환 중...")
+            self.convert_to_pdf()
+            self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
 
+        except pyautogui.PyAutoGUIException as e:
+            self.app.update_status(f"화면 제어 오류: {e}")
+        except FileNotFoundError as e:
+            self.app.update_status(f"파일 시스템 오류: {e}")
         except Exception as e:
-            self.status_callback(f"오류 발생: {e}")
+            self.app.update_status(f"알 수 없는 오류 발생: {e}")
         finally:
-            if self.done_callback:
-                self.done_callback.__self__.after(0, self.done_callback)
+            # 작업 완료 후 UI 활성화를 메인 스레드에서 실행
+            self.app.after(0, self.app.on_task_done)
 
-    def convert_to_pdf(self, image_folder):
-        images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
-        if not images:
-            self.status_callback("캡처된 이미지가 없어 PDF를 생성할 수 없습니다.")
+    def convert_to_pdf(self):
+        image_files = sorted([f for f in os.listdir(self.app.IMAGE_FOLDER) if f.endswith(".png")])
+        if not image_files:
+            self.app.update_status("캡처된 이미지가 없어 PDF를 생성할 수 없습니다.")
             return
 
-        pdf_folder = "PDFs"
-        if not os.path.exists(pdf_folder):
-            os.makedirs(pdf_folder)
+        # PDF 폴더 생성
+        if not os.path.exists(self.app.PDF_FOLDER):
+            os.makedirs(self.app.PDF_FOLDER)
         
-        pdf_path = os.path.join(pdf_folder, f"{self.settings['pdf_name']}.pdf")
+        pdf_path = os.path.join(self.app.PDF_FOLDER, f"{self.settings['pdf_name']}.pdf")
+        
+        image_paths = [os.path.join(self.app.IMAGE_FOLDER, f) for f in image_files]
 
         try:
-            pil_images = [Image.open(os.path.join(image_folder, img)).convert('RGB') for img in images]
+            # 이미지들을 PDF로 변환
+            pil_images = [Image.open(p).convert('RGB') for p in image_paths]
             if pil_images:
-                pil_images[0].save(pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:])
+                pil_images[0].save(
+                    pdf_path, "PDF", resolution=100.0, save_all=True, append_images=pil_images[1:]
+                )
         except Exception as e:
-            self.status_callback(f"PDF 변환 오류: {e}")
+            self.app.update_status(f"PDF 변환 오류: {e}")
         finally:
-            for img in images:
+            # 임시 이미지 파일 삭제
+            for p in image_paths:
                 try:
-                    os.remove(os.path.join(image_folder, img))
+                    os.remove(p)
                 except OSError as e:
-                    self.status_callback(f"이미지 파일 삭제 오류: {e}")
+                    self.app.update_status(f"이미지 파일 삭제 오류: {e}")
 
 
 if __name__ == "__main__":
