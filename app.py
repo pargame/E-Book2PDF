@@ -333,16 +333,25 @@ class KeyPressPage(ctk.CTkFrame):
         self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
-        # *** 해결책 1: 이벤트 격리 ***
-        # 전역 바인딩 대신, 이 프레임 자체에 이벤트를 바인딩
-        self.bind("<KeyPress>", self.on_key_press)
+        # 페이지가 보이거나 사라질 때 이벤트를 바인딩/언바인딩
         self.bind("<Map>", self.on_page_show)
+        self.bind("<Unmap>", self.on_page_hide)
 
     def on_page_show(self, event):
+        """페이지가 보일 때, 메인 윈도우에 키 이벤트를 바인딩합니다."""
         self.key_label.configure(text="(입력 대기 중)")
-        self.focus_set()
+        self.controller.bind("<KeyPress>", self.on_key_press)
+
+    def on_page_hide(self, event):
+        """페이지가 사라질 때, 메인 윈도우에서 키 이벤트를 언바인딩합니다."""
+        self.controller.unbind("<KeyPress>")
 
     def on_key_press(self, event):
+        """키가 눌렸을 때 실행되는 콜백 함수"""
+        # ESC 키는 작업 중단용이므로 무시
+        if event.keysym == 'Escape':
+            return
+
         key_name = event.keysym
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
