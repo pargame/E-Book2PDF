@@ -342,21 +342,24 @@ class KeyPressPage(ctk.CTkFrame):
         self.controller.bind("<KeyPress>", self.on_key_press)
 
     def on_key_press(self, event):
-        """키가 눌렸을 때 실행되는 콜백 함수"""
+        """
+        키가 눌렸을 때 실행됩니다.
+        키를 처리한 후, 다른 페이지에 영향을 주지 않도록 리스너를 즉시 해제합니다.
+        """
         # ESC 키는 작업 중단용이므로 무시
         if event.keysym == 'Escape':
             return
 
-        # 1. 리스너를 즉시 해제하여 추가 입력을 방지
+        # 1. 다른 페이지에 영향을 주지 않도록 리스너를 즉시 해제합니다.
         self.controller.unbind("<KeyPress>")
 
-        # 2. 선택된 키를 저장하고 UI 업데이트
+        # 2. 선택된 키를 저장하고 UI를 업데이트합니다.
         key_name = event.keysym
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
         self.controller.frames["MainPage"].key_label.configure(text=f"({key_name})")
 
-        # 3. 0.5초 후 메인 페이지로 복귀
+        # 3. 0.5초 후 메인 페이지로 복귀합니다.
         self.controller.after(500, lambda: self.controller.show_frame("MainPage"))
 
 class ScreenshotWorker(threading.Thread):
