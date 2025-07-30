@@ -333,18 +333,13 @@ class KeyPressPage(ctk.CTkFrame):
         self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
-        # 페이지가 보이거나 사라질 때 이벤트를 바인딩/언바인딩
+        # 페이지가 보일 때 리스너를 연결
         self.bind("<Map>", self.on_page_show)
-        self.bind("<Unmap>", self.on_page_hide)
 
     def on_page_show(self, event):
         """페이지가 보일 때, 메인 윈도우에 키 이벤트를 바인딩합니다."""
         self.key_label.configure(text="(입력 대기 중)")
         self.controller.bind("<KeyPress>", self.on_key_press)
-
-    def on_page_hide(self, event):
-        """페이지가 사라질 때, 메인 윈도우에서 키 이벤트를 언바인딩합니다."""
-        self.controller.unbind("<KeyPress>")
 
     def on_key_press(self, event):
         """키가 눌렸을 때 실행되는 콜백 함수"""
@@ -352,10 +347,16 @@ class KeyPressPage(ctk.CTkFrame):
         if event.keysym == 'Escape':
             return
 
+        # 1. 리스너를 즉시 해제하여 추가 입력을 방지
+        self.controller.unbind("<KeyPress>")
+
+        # 2. 선택된 키를 저장하고 UI 업데이트
         key_name = event.keysym
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
         self.controller.frames["MainPage"].key_label.configure(text=f"({key_name})")
+
+        # 3. 0.5초 후 메인 페이지로 복귀
         self.controller.after(500, lambda: self.controller.show_frame("MainPage"))
 
 class ScreenshotWorker(threading.Thread):
