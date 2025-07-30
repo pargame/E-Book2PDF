@@ -7,38 +7,6 @@ import sys
 import subprocess
 from PIL import Image
 
-# +++ 신규 클래스: 시각적 좌표 선택기 +++
-class CoordinateSelector(ctk.CTkToplevel):
-    """화면 전체에 반투명 오버레이를 띄워 클릭으로 좌표를 얻는 클래스"""
-    def __init__(self, master, callback):
-        super().__init__(master)
-        self.callback = callback
-
-        # --- 창 설정 ---
-        self.attributes("-fullscreen", True)  # 전체 화면
-        self.attributes("-alpha", 0.3)       # 반투명
-        self.attributes("-topmost", True)    # 항상 위에 표시
-        self.grab_set()                      # 다른 창과 상호작용 방지
-        # ---------------
-
-        # --- 안내 문구 ---
-        label_font = ctk.CTkFont(size=30, weight="bold")
-        label = ctk.CTkLabel(self, text="원하는 위치를 클릭하세요", font=label_font, fg_color="black", text_color="white")
-        label.place(relx=0.5, rely=0.5, anchor="center")
-        # ----------------
-
-        # --- 이벤트 바인딩 ---
-        self.bind("<Button-1>", self.on_click)
-        self.bind("<Escape>", lambda e: self.destroy()) # ESC로 취소
-        # --------------------
-
-    def on_click(self, event):
-        """클릭 시 좌표를 콜백 함수로 전달하고 창을 닫습니다."""
-        # event.x_root, event.y_root는 전체 화면 기준 절대 좌표
-        coords = (event.x_root, event.y_root)
-        self.callback(coords)
-        self.destroy()
-
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -46,24 +14,16 @@ class App(ctk.CTk):
         self.geometry("500x450")
         self.resizable(False, False)
 
-        # --- 해상도 스케일링 팩터 계산 (macOS Retina 대응) ---
+        # --- macOS 화면 설정 초기화 ---
         self.scale_factor = 1.0
-        try:
-            if sys.platform == "darwin":
-                import re
-                cmd = ["system_profiler", "SPDisplaysDataType"]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                output = result.stdout
-                physical_res_match = re.search(r"Resolution: (\d+) x \d+", output)
-                logical_res_match = re.search(r"(?:UI Looks like|Looks like): (\d+) x \d+", output)
-                if physical_res_match and logical_res_match:
-                    physical_width = int(physical_res_match.group(1))
-                    logical_width = int(logical_res_match.group(1))
-                    if logical_width > 0:
-                        self.scale_factor = physical_width / logical_width
-        except Exception as e:
-            print(f"macOS 스케일링 팩터 계산 실패: {e}")
-            pass
+        if sys.platform == "darwin":
+            try:
+                # PyObjC를 통해 네이티브 스케일 팩터 획득
+                from Foundation import NSScreen
+                self.scale_factor = NSScreen.mainScreen().backingScaleFactor()
+                print(f"macOS Retina 스케일 감지: {self.scale_factor}")
+            except Exception as e:
+                print(f"macOS 스케일 감지 실패: {e}")
         # -------------------------------------------------
 
         self.IMAGE_FOLDER = "screenshots"
@@ -154,10 +114,18 @@ class MainPage(ctk.CTkFrame):
         self.delay_entry.insert(0, "1.5")
         self.delay_entry.pack(side="left")
 
+        filename_frame = ctk.CTkFrame(self)
+        filename_frame.pack(pady=10)
+        ctk.CTkLabel(filename_frame, text="PDF 파일명:").pack(side="left", padx=5)
+        self.filename_entry = ctk.CTkEntry(filename_frame, width=200, placeholder_text="파일명 입력 (확장자 제외)")
+        self.filename_entry.pack(side="left")
+
         self.start_button = ctk.CTkButton(self, text="프로그램 시작", width=200, height=40, command=self.start_process)
         self.start_button.pack(pady=40)
 
-        self.ui_elements = [self.coords_button, self.page_entry, self.delay_entry, self.key_radio, self.click_radio, self.set_click_pos_button, self.set_key_button, self.start_button]
+        self.ui_elements = [self.coords_button, self.page_entry, self.delay_entry, 
+                          self.key_radio, self.click_radio, self.set_click_pos_button, 
+                          self.set_key_button, self.start_button, self.filename_entry]
 
     def set_ui_state(self, state):
         for element in self.ui_elements:
@@ -172,6 +140,13 @@ class MainPage(ctk.CTkFrame):
             width = self.controller.bottom_right_coord[0] - self.controller.top_left_coord[0]
             height = self.controller.bottom_right_coord[1] - self.controller.top_left_coord[1]
             if width <= 0 or height <= 0: raise ValueError("잘못된 캡처 영역입니다.")
+            
+            # PDF 파일명 검증
+            filename = self.filename_entry.get().strip()
+            if not filename: 
+                filename = f"output_{int(time.time())}"  # 기본값
+            elif not all(c.isalnum() or c in '-_' for c in filename):
+                raise ValueError("파일명에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.")
         except ValueError as e:
             self.controller.update_status(f"오류: {e}")
             return
@@ -182,7 +157,14 @@ class MainPage(ctk.CTkFrame):
             self.controller.update_status(f"오류: 페이지 넘김 {'키' if turn_method == 'key' else '클릭 위치'}가 설정되지 않았습니다.")
             return
 
-        settings = {'total_pages': total_pages, 'delay': delay, 'region': (self.controller.top_left_coord[0], self.controller.top_left_coord[1], width, height), 'turn_method': turn_method, 'turn_details': turn_details, 'pdf_name': f"output_{int(time.time())}"}
+        settings = {
+            'total_pages': total_pages,
+            'delay': delay,
+            'region': (self.controller.top_left_coord[0], self.controller.top_left_coord[1], width, height),
+            'turn_method': turn_method,
+            'turn_details': turn_details,
+            'pdf_name': filename
+        }
         self.set_ui_state("disabled")
         self.start_countdown(5, settings)
 
@@ -203,14 +185,23 @@ class MainPage(ctk.CTkFrame):
         self.key_label.configure(text=f"({key})" if key else "(미설정)")
 
     def set_click_position(self):
-        self.controller.withdraw() # 메인 창 숨기기
-        CoordinateSelector(self.controller, self.update_click_position)
+        self._start_click_capture_countdown(5)
 
-    def update_click_position(self, coords):
-        self.controller.deiconify() # 메인 창 다시 보이기
-        self.controller.page_turn_coord = coords
-        self.click_pos_label.configure(text=f"위치: {coords}")
-        self.controller.update_status("클릭 위치가 설정되었습니다.")
+    def _start_click_capture_countdown(self, count):
+        if count > 0:
+            self.controller.update_status(f"{count}초 후 클릭 위치를 캡처합니다. 원하는 위치에 마우스를 올려두세요.")
+            self.after(1000, lambda: self._start_click_capture_countdown(count - 1))
+        else:
+            self._capture_click_position()
+
+    def _capture_click_position(self):
+        try:
+            x, y = pyautogui.position()
+            self.controller.page_turn_coord = (x, y)
+            self.click_pos_label.configure(text=f"위치: ({x}, {y})")
+            self.controller.update_status("클릭 위치가 설정되었습니다.")
+        except Exception as e:
+            self.controller.update_status(f"마우스 위치 읽기 오류: {e}")
 
 class PreviewWindow(ctk.CTkToplevel):
     def __init__(self, master, image):
@@ -232,7 +223,7 @@ class CoordsPage(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
         ctk.CTkLabel(self, text="스크린샷 범위 설정", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=10, padx=10)
-
+        
         coords_frame = ctk.CTkFrame(self)
         coords_frame.pack(pady=5, padx=10, fill="x")
         ctk.CTkLabel(coords_frame, text="왼쪽 상단 (X, Y):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -263,8 +254,27 @@ class CoordsPage(ctk.CTkFrame):
             
             full_screenshot = pyautogui.screenshot()
             scale = self.controller.scale_factor
-            crop_box = (top_x * scale, top_y * scale, bottom_x * scale, bottom_y * scale)
-            PreviewWindow(self, image=full_screenshot.crop(crop_box))
+            
+            # 스케일 팩터를 적용하여 실제 픽셀 좌표 계산
+            crop_box = (
+                int(top_x * scale),
+                int(top_y * scale),
+                int(bottom_x * scale),
+                int(bottom_y * scale)
+            )
+            
+            # 이미지 크기 확인 및 안전한 크롭 박스 계산
+            img_width, img_height = full_screenshot.size
+            safe_crop_box = (
+                max(0, min(crop_box[0], img_width)),
+                max(0, min(crop_box[1], img_height)),
+                max(0, min(crop_box[2], img_width)),
+                max(0, min(crop_box[3], img_height))
+            )
+            
+            # 크롭 및 미리보기
+            cropped = full_screenshot.crop(safe_crop_box)
+            PreviewWindow(self, image=cropped)
         except (ValueError, TypeError) as e: self.controller.update_status(f"오류: {e}")
         except Exception as e: self.controller.update_status(f"미리보기 오류: {e}")
 
@@ -279,11 +289,25 @@ class CoordsPage(ctk.CTkFrame):
             self.controller.show_frame("MainPage")
         except (ValueError, TypeError): self.controller.update_status("오류: 모든 좌표는 숫자로 입력해야 합니다.")
 
-    # *** 해결책 2: 시각적 좌표 캡처 ***
     def start_capture(self, target):
-        self.controller.withdraw() # 메인 창 숨기기
-        callback = self.update_top_left if target == "top_left" else self.update_bottom_right
-        CoordinateSelector(self.controller, callback)
+        self._start_capture_countdown(5, target)
+
+    def _start_capture_countdown(self, count, target):
+        if count > 0:
+            pos_text = "왼쪽 상단" if target == "top_left" else "오른쪽 하단"
+            self.controller.update_status(f"{count}초 후 {pos_text} 좌표를 캡처합니다. 원하는 위치에 마우스를 올려두세요.")
+            self.after(1000, lambda: self._start_capture_countdown(count - 1, target))
+        else:
+            self._capture_mouse_position(target)
+
+    def _capture_mouse_position(self, target):
+        try:
+            # pyautogui.position()은 스케일링이 적용되지 않은 논리적 좌표를 반환
+            x, y = pyautogui.position()
+            callback = self.update_top_left if target == "top_left" else self.update_bottom_right
+            callback((x, y))
+        except Exception as e:
+            self.controller.update_status(f"마우스 위치 읽기 오류: {e}")
 
     def update_entry(self, target, coords):
         x_entry = self.top_x_entry if target == "top_left" else self.bottom_x_entry
@@ -292,13 +316,13 @@ class CoordsPage(ctk.CTkFrame):
         y_entry.delete(0, "end"); y_entry.insert(0, str(coords[1]))
 
     def update_top_left(self, coords):
-        self.controller.deiconify() # 메인 창 다시 보이기
         self.update_entry("top_left", coords)
+        self.controller.top_left_coord = coords
         self.controller.update_status("왼쪽 상단 좌표가 설정되었습니다.")
 
     def update_bottom_right(self, coords):
-        self.controller.deiconify() # 메인 창 다시 보이기
         self.update_entry("bottom_right", coords)
+        self.controller.bottom_right_coord = coords
         self.controller.update_status("오른쪽 하단 좌표가 설정되었습니다.")
 
 class KeyPressPage(ctk.CTkFrame):
@@ -312,7 +336,11 @@ class KeyPressPage(ctk.CTkFrame):
         # *** 해결책 1: 이벤트 격리 ***
         # 전역 바인딩 대신, 이 프레임 자체에 이벤트를 바인딩
         self.bind("<KeyPress>", self.on_key_press)
-        self.bind("<Map>", lambda e: self.key_label.configure(text="(입력 대기 중)"))
+        self.bind("<Map>", self.on_page_show)
+
+    def on_page_show(self, event):
+        self.key_label.configure(text="(입력 대기 중)")
+        self.focus_set()
 
     def on_key_press(self, event):
         key_name = event.keysym
@@ -327,17 +355,39 @@ class ScreenshotWorker(threading.Thread):
         self.app = app
         self.settings = settings
         self.daemon = True
+        self.running = True
+        self.captured_images = []  # 캡처된 이미지 경로 추적
+
+    def stop(self):
+        self.running = False
+
+    def cleanup(self):
+        # 임시 파일 정리
+        for path in self.captured_images:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
 
     def run(self):
         try:
+            # ESC 키 이벤트 바인딩
+            self.app.bind('<Escape>', lambda e: self.stop())
             os.makedirs(self.app.IMAGE_FOLDER, exist_ok=True)
+            
             for i in range(self.settings['total_pages']):
+                if not self.running:
+                    raise InterruptedError("사용자가 작업을 중단했습니다.")
+                
                 page_num = i + 1
                 self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 전체 화면 캡처 중...")
                 file_path = os.path.join(self.app.IMAGE_FOLDER, f"page_{page_num:03d}.png")
                 pyautogui.screenshot(file_path)
                 if not os.path.exists(file_path):
                     raise FileNotFoundError(f"{page_num}페이지 캡처 실패! 권한을 확인하세요.")
+                
+                self.captured_images.append(file_path)
                 
                 if i < self.settings['total_pages'] - 1:
                     self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 캡처 성공. 페이지 넘기는 중...")
@@ -346,11 +396,16 @@ class ScreenshotWorker(threading.Thread):
                     pyautogui.click(turn_details) if turn_method == 'click' else pyautogui.press(turn_details)
                     time.sleep(self.settings['delay'])
             
-            self.app.update_status("이미지 후처리 및 PDF 변환 중...")
-            self.process_and_convert_to_pdf()
+            if self.running:  # 작업이 중단되지 않았을 때만 PDF 변환
+                self.app.update_status("이미지 후처리 및 PDF 변환 중...")
+                self.process_and_convert_to_pdf()
+        except InterruptedError as e:
+            self.app.update_status("작업이 중단되었습니다.")
         except Exception as e:
             self.app.update_status(f"오류: {e}")
         finally:
+            self.cleanup()  # 임시 파일 정리
+            self.app.unbind('<Escape>')  # 이벤트 바인딩 제거
             self.app.after(0, self.app.on_task_done)
 
     def process_and_convert_to_pdf(self):
@@ -363,17 +418,35 @@ class ScreenshotWorker(threading.Thread):
         pdf_path = os.path.join(self.app.PDF_FOLDER, f"{self.settings['pdf_name']}.pdf")
         image_paths = [os.path.join(self.app.IMAGE_FOLDER, f) for f in image_files]
 
-        scale = self.app.scale_factor
         region = self.settings['region']
-        crop_box = (region[0] * scale, region[1] * scale, (region[0] + region[2]) * scale, (region[1] + region[3]) * scale)
+        scale = self.app.scale_factor
+        
+        # 스케일 팩터를 적용하여 실제 픽셀 좌표 계산
+        crop_box = (
+            int(region[0] * scale),
+            int(region[1] * scale),
+            int((region[0] + region[2]) * scale),
+            int((region[1] + region[3]) * scale)
+        )
 
         try:
             first_image = None
             append_images = []
             for i, path in enumerate(image_paths):
                 with Image.open(path) as img:
+                    # 이미지 크기 확인
+                    img_width, img_height = img.size
+                    
+                    # 크롭 박스가 이미지 범위를 벗어나지 않도록 조정
+                    safe_crop_box = (
+                        max(0, min(crop_box[0], img_width)),
+                        max(0, min(crop_box[1], img_height)),
+                        max(0, min(crop_box[2], img_width)),
+                        max(0, min(crop_box[3], img_height))
+                    )
+                    
                     # RGBA -> RGB로 변환하여 PDF 호환성 문제 해결
-                    cropped_img = img.crop(crop_box).convert('RGB')
+                    cropped_img = img.crop(safe_crop_box).convert('RGB')
                     if i == 0:
                         first_image = cropped_img
                     else:
