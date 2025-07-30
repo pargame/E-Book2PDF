@@ -333,24 +333,35 @@ class KeyPressPage(ctk.CTkFrame):
         self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
 
-        # 페이지가 보일 때 리스너를 연결
+        # 페이지가 보이거나 사라질 때의 이벤트 처리
         self.bind("<Map>", self.on_page_show)
+        self.bind("<Unmap>", self.on_page_hide)
 
     def on_page_show(self, event):
-        """페이지가 보일 때, 메인 윈도우에 키 이벤트를 바인딩합니다."""
+        """
+        페이지가 보일 때, 이전 페이지의 잔여 이벤트를 무시하기 위해
+        짧은 딜레이 후 리스너를 활성화합니다.
+        """
         self.key_label.configure(text="(입력 대기 중)")
+        self.after(100, self.activate_listener)
+
+    def activate_listener(self):
+        """키보드 리스너를 메인 윈도우에 실제로 바인딩합니다."""
         self.controller.bind("<KeyPress>", self.on_key_press)
+
+    def on_page_hide(self, event):
+        """페이지가 사라질 때, 만약을 위해 리스너를 확실히 해제합니다."""
+        self.controller.unbind("<KeyPress>")
 
     def on_key_press(self, event):
         """
         키가 눌렸을 때 실행됩니다.
         키를 처리한 후, 다른 페이지에 영향을 주지 않도록 리스너를 즉시 해제합니다.
         """
-        # ESC 키는 작업 중단용이므로 무시
         if event.keysym == 'Escape':
             return
 
-        # 1. 다른 페이지에 영향을 주지 않도록 리스너를 즉시 해제합니다.
+        # 1. 리스너를 즉시 해제합니다.
         self.controller.unbind("<KeyPress>")
 
         # 2. 선택된 키를 저장하고 UI를 업데이트합니다.
