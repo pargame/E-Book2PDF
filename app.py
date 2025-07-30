@@ -4,7 +4,7 @@ import threading
 import time
 import os
 import sys
-import subprocess
+import random
 from PIL import Image
 
 class App(ctk.CTk):
@@ -18,22 +18,28 @@ class App(ctk.CTk):
         self.scale_factor = 1.0
         if sys.platform == "darwin":
             try:
-                # PyObjC를 통해 네이티브 스케일 팩터 획득
                 from Foundation import NSScreen
                 self.scale_factor = NSScreen.mainScreen().backingScaleFactor()
                 print(f"macOS Retina 스케일 감지: {self.scale_factor}")
             except Exception as e:
                 print(f"macOS 스케일 감지 실패: {e}")
-        # -------------------------------------------------
-
+        
         self.IMAGE_FOLDER = "screenshots"
         self.PDF_FOLDER = "PDFs"
 
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
-        self.top_left_coord = None
-        self.bottom_right_coord = None
+        # --- 좌표 초기화 ---
+        try:
+            screen_width, screen_height = pyautogui.size()
+            self.top_left_coord = (0, 0)
+            self.bottom_right_coord = (screen_width, screen_height)
+        except Exception as e:
+            print(f"화면 크기 가져오기 실패: {e}")
+            self.top_left_coord = (0, 0)
+            self.bottom_right_coord = (800, 600) # Fallback
+
         self.page_turn_key = None
         self.page_turn_coord = None
 
@@ -55,9 +61,6 @@ class App(ctk.CTk):
 
     def show_frame(self, page_name):
         frame = self.frames[page_name]
-        # *** 해결책 1: 이벤트 격리 ***
-        # 페이지가 전환될 때 포커스를 명확히 설정하여, 이전 페이지의 이벤트 리스너가 동작하지 않도록 함
-        frame.focus_set()
         frame.tkraise()
 
     def start_screenshot_task(self, settings):
@@ -75,8 +78,8 @@ class StartPage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         ctk.CTkLabel(self, text="E-Book to PDF", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=40)
-        ctk.CTkLabel(self, text="Developed by pargamer & Gemini", font=ctk.CTkFont(size=14)).pack(pady=10)
-        ctk.CTkLabel(self, text="© 2025. pargamer. All rights reserved.", font=ctk.CTkFont(size=12)).pack(pady=5)
+        ctk.CTkLabel(self, text="Developed by Pargame & Gemini", font=ctk.CTkFont(size=14)).pack(pady=10)
+        ctk.CTkLabel(self, text="© 2025. Pargame. All rights reserved.", font=ctk.CTkFont(size=12)).pack(pady=5)
         ctk.CTkButton(self, text="시작", width=200, height=40, command=lambda: controller.show_frame("MainPage")).pack(pady=60)
 
 class MainPage(ctk.CTkFrame):
@@ -107,13 +110,6 @@ class MainPage(ctk.CTkFrame):
         self.click_pos_label = ctk.CTkLabel(page_turn_frame, text="")
         self.on_turn_method_change()
 
-        delay_frame = ctk.CTkFrame(self)
-        delay_frame.pack(pady=10)
-        ctk.CTkLabel(delay_frame, text="스크린샷 딜레이(초):").pack(side="left", padx=5)
-        self.delay_entry = ctk.CTkEntry(delay_frame, width=100)
-        self.delay_entry.insert(0, "1.5")
-        self.delay_entry.pack(side="left")
-
         filename_frame = ctk.CTkFrame(self)
         filename_frame.pack(pady=10)
         ctk.CTkLabel(filename_frame, text="PDF 파일명:").pack(side="left", padx=5)
@@ -123,7 +119,7 @@ class MainPage(ctk.CTkFrame):
         self.start_button = ctk.CTkButton(self, text="프로그램 시작", width=200, height=40, command=self.start_process)
         self.start_button.pack(pady=40)
 
-        self.ui_elements = [self.coords_button, self.page_entry, self.delay_entry, 
+        self.ui_elements = [self.coords_button, self.page_entry, 
                           self.key_radio, self.click_radio, self.set_click_pos_button, 
                           self.set_key_button, self.start_button, self.filename_entry]
 
@@ -135,16 +131,14 @@ class MainPage(ctk.CTkFrame):
         try:
             total_pages = int(self.page_entry.get())
             if total_pages <= 0: raise ValueError("페이지 수는 1 이상이어야 합니다.")
-            delay = float(self.delay_entry.get())
             if not self.controller.top_left_coord or not self.controller.bottom_right_coord: raise ValueError("스크린샷 범위가 설정되지 않았습니다.")
             width = self.controller.bottom_right_coord[0] - self.controller.top_left_coord[0]
             height = self.controller.bottom_right_coord[1] - self.controller.top_left_coord[1]
             if width <= 0 or height <= 0: raise ValueError("잘못된 캡처 영역입니다.")
             
-            # PDF 파일명 검증
             filename = self.filename_entry.get().strip()
             if not filename: 
-                filename = f"output_{int(time.time())}"  # 기본값
+                filename = f"output_{int(time.time())}"
             elif not all(c.isalnum() or c in '-_' for c in filename):
                 raise ValueError("파일명에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.")
         except ValueError as e:
@@ -159,7 +153,6 @@ class MainPage(ctk.CTkFrame):
 
         settings = {
             'total_pages': total_pages,
-            'delay': delay,
             'region': (self.controller.top_left_coord[0], self.controller.top_left_coord[1], width, height),
             'turn_method': turn_method,
             'turn_details': turn_details,
@@ -175,7 +168,7 @@ class MainPage(ctk.CTkFrame):
         else:
             self.controller.start_screenshot_task(settings)
 
-    def on_turn_method_change(self):
+    def on_turn_method_change(self, value=None):
         is_key_method = self.page_turn_method_var.get() == "key"
         self.set_key_button.pack(side="left", padx=5) if is_key_method else self.set_key_button.pack_forget()
         self.key_label.pack(side="left", padx=5) if is_key_method else self.key_label.pack_forget()
@@ -255,7 +248,6 @@ class CoordsPage(ctk.CTkFrame):
             full_screenshot = pyautogui.screenshot()
             scale = self.controller.scale_factor
             
-            # 스케일 팩터를 적용하여 실제 픽셀 좌표 계산
             crop_box = (
                 int(top_x * scale),
                 int(top_y * scale),
@@ -263,7 +255,6 @@ class CoordsPage(ctk.CTkFrame):
                 int(bottom_y * scale)
             )
             
-            # 이미지 크기 확인 및 안전한 크롭 박스 계산
             img_width, img_height = full_screenshot.size
             safe_crop_box = (
                 max(0, min(crop_box[0], img_width)),
@@ -272,7 +263,6 @@ class CoordsPage(ctk.CTkFrame):
                 max(0, min(crop_box[3], img_height))
             )
             
-            # 크롭 및 미리보기
             cropped = full_screenshot.crop(safe_crop_box)
             PreviewWindow(self, image=cropped)
         except (ValueError, TypeError) as e: self.controller.update_status(f"오류: {e}")
@@ -302,7 +292,6 @@ class CoordsPage(ctk.CTkFrame):
 
     def _capture_mouse_position(self, target):
         try:
-            # pyautogui.position()은 스케일링이 적용되지 않은 논리적 좌표를 반환
             x, y = pyautogui.position()
             callback = self.update_top_left if target == "top_left" else self.update_bottom_right
             callback((x, y))
@@ -332,45 +321,33 @@ class KeyPressPage(ctk.CTkFrame):
         ctk.CTkLabel(self, text="페이지를 넘기는 데 사용할 키를 누르세요...", font=ctk.CTkFont(size=18)).pack(pady=40, padx=10)
         self.key_label = ctk.CTkLabel(self, text="(입력 대기 중)", font=ctk.CTkFont(size=24, weight="bold"))
         self.key_label.pack(pady=20)
+        ctk.CTkLabel(self, text="아무 키나 누르면 자동으로 메인 화면으로 돌아갑니다.\n(ESC를 누르면 취소하고 돌아갑니다)", font=ctk.CTkFont(size=12)).pack(pady=5)
 
-        # 페이지가 보이거나 사라질 때의 이벤트 처리
         self.bind("<Map>", self.on_page_show)
         self.bind("<Unmap>", self.on_page_hide)
 
     def on_page_show(self, event):
-        """
-        페이지가 보일 때, 이전 페이지의 잔여 이벤트를 무시하기 위해
-        짧은 딜레이 후 리스너를 활성화합니다.
-        """
         self.key_label.configure(text="(입력 대기 중)")
         self.after(100, self.activate_listener)
 
     def activate_listener(self):
-        """키보드 리스너를 메인 윈도우에 실제로 바인딩합니다."""
         self.controller.bind("<KeyPress>", self.on_key_press)
 
     def on_page_hide(self, event):
-        """페이지가 사라질 때, 만약을 위해 리스너를 확실히 해제합니다."""
         self.controller.unbind("<KeyPress>")
 
     def on_key_press(self, event):
-        """
-        키가 눌렸을 때 실행됩니다.
-        키를 처리한 후, 다른 페이지에 영향을 주지 않도록 리스너를 즉시 해제합니다.
-        """
-        if event.keysym == 'Escape':
+        self.controller.unbind("<KeyPress>")
+        key_name = event.keysym
+
+        if key_name == 'Escape':
+            self.controller.show_frame("MainPage")
             return
 
-        # 1. 리스너를 즉시 해제합니다.
-        self.controller.unbind("<KeyPress>")
-
-        # 2. 선택된 키를 저장하고 UI를 업데이트합니다.
-        key_name = event.keysym
         self.controller.page_turn_key = key_name
         self.key_label.configure(text=f"선택된 키: '{key_name}'")
         self.controller.frames["MainPage"].key_label.configure(text=f"({key_name})")
 
-        # 3. 0.5초 후 메인 페이지로 복귀합니다.
         self.controller.after(500, lambda: self.controller.show_frame("MainPage"))
 
 class ScreenshotWorker(threading.Thread):
@@ -380,23 +357,23 @@ class ScreenshotWorker(threading.Thread):
         self.settings = settings
         self.daemon = True
         self.running = True
-        self.captured_images = []  # 캡처된 이미지 경로 추적
+        self.captured_images = []
+        self.task_successful = False
 
     def stop(self):
         self.running = False
 
     def cleanup(self):
-        # 임시 파일 정리
-        for path in self.captured_images:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except OSError:
-                pass
+        if self.task_successful:
+            for path in self.captured_images:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except OSError:
+                    pass
 
     def run(self):
         try:
-            # ESC 키 이벤트 바인딩
             self.app.bind('<Escape>', lambda e: self.stop())
             os.makedirs(self.app.IMAGE_FOLDER, exist_ok=True)
             
@@ -407,7 +384,15 @@ class ScreenshotWorker(threading.Thread):
                 page_num = i + 1
                 self.app.update_status(f"({page_num}/{self.settings['total_pages']}) 전체 화면 캡처 중...")
                 file_path = os.path.join(self.app.IMAGE_FOLDER, f"page_{page_num:03d}.png")
-                pyautogui.screenshot(file_path)
+                
+                try:
+                    screenshot = pyautogui.screenshot()
+                    screenshot.save(file_path)
+                    if not os.path.exists(file_path):
+                        raise RuntimeError(f"파일 저장에 실패했습니다: {file_path}")
+                except Exception as e:
+                    raise IOError(f"{page_num}페이지 스크린샷 저장 오류: {e}")
+
                 if not os.path.exists(file_path):
                     raise FileNotFoundError(f"{page_num}페이지 캡처 실패! 권한을 확인하세요.")
                 
@@ -418,34 +403,34 @@ class ScreenshotWorker(threading.Thread):
                     turn_method = self.settings['turn_method']
                     turn_details = self.settings['turn_details']
                     pyautogui.click(turn_details) if turn_method == 'click' else pyautogui.press(turn_details)
-                    time.sleep(self.settings['delay'])
+                    time.sleep(random.uniform(0.7, 1.3))
             
-            if self.running:  # 작업이 중단되지 않았을 때만 PDF 변환
+            if self.running:
                 self.app.update_status("이미지 후처리 및 PDF 변환 중...")
                 self.process_and_convert_to_pdf()
+                self.task_successful = True # 작업 성공 플래그 설정
+
         except InterruptedError as e:
-            self.app.update_status("작업이 중단되었습니다.")
+            self.app.update_status(f"작업 중단. 임시 파일이 보존되었습니다: {self.app.IMAGE_FOLDER}")
         except Exception as e:
-            self.app.update_status(f"오류: {e}")
+            self.app.update_status(f"오류 발생. 임시 파일이 보존되었습니다: {e}")
         finally:
-            self.cleanup()  # 임시 파일 정리
-            self.app.unbind('<Escape>')  # 이벤트 바인딩 제거
+            self.cleanup()
+            self.app.unbind('<Escape>')
             self.app.after(0, self.app.on_task_done)
 
     def process_and_convert_to_pdf(self):
-        image_files = sorted([f for f in os.listdir(self.app.IMAGE_FOLDER) if f.endswith(".png")])
+        image_files = sorted([os.path.join(self.app.IMAGE_FOLDER, f) for f in os.listdir(self.app.IMAGE_FOLDER) if f.endswith(".png")])
         if not image_files:
             self.app.update_status("캡처된 이미지가 없어 PDF를 생성할 수 없습니다.")
             return
 
         os.makedirs(self.app.PDF_FOLDER, exist_ok=True)
         pdf_path = os.path.join(self.app.PDF_FOLDER, f"{self.settings['pdf_name']}.pdf")
-        image_paths = [os.path.join(self.app.IMAGE_FOLDER, f) for f in image_files]
 
         region = self.settings['region']
         scale = self.app.scale_factor
         
-        # 스케일 팩터를 적용하여 실제 픽셀 좌표 계산
         crop_box = (
             int(region[0] * scale),
             int(region[1] * scale),
@@ -456,12 +441,9 @@ class ScreenshotWorker(threading.Thread):
         try:
             first_image = None
             append_images = []
-            for i, path in enumerate(image_paths):
+            for i, path in enumerate(image_files):
                 with Image.open(path) as img:
-                    # 이미지 크기 확인
                     img_width, img_height = img.size
-                    
-                    # 크롭 박스가 이미지 범위를 벗어나지 않도록 조정
                     safe_crop_box = (
                         max(0, min(crop_box[0], img_width)),
                         max(0, min(crop_box[1], img_height)),
@@ -469,7 +451,6 @@ class ScreenshotWorker(threading.Thread):
                         max(0, min(crop_box[3], img_height))
                     )
                     
-                    # RGBA -> RGB로 변환하여 PDF 호환성 문제 해결
                     cropped_img = img.crop(safe_crop_box).convert('RGB')
                     if i == 0:
                         first_image = cropped_img
@@ -481,10 +462,7 @@ class ScreenshotWorker(threading.Thread):
                 self.app.update_status("작업 완료! 'PDFs' 폴더를 확인하세요.")
         except Exception as e:
             self.app.update_status(f"PDF 변환 오류: {e}")
-        finally:
-            for p in image_paths:
-                try: os.remove(p)
-                except OSError: pass
+            raise # PDF 변환 실패 시 task_successful 플래그가 설정되지 않도록 예외를 다시 발생
 
 if __name__ == "__main__":
     app = App()

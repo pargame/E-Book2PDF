@@ -8,7 +8,7 @@
 
 ### 1. 프로젝트 복제 및 이동
 ```bash
-git clone https://github.com/pargamer/E-Book2PDF.git
+git clone https://github.com/Pargame/E-Book2PDF.git
 cd E-Book2PDF
 ```
 
